@@ -3,16 +3,16 @@
 ARCH CLI - Agent Runtime & Coordination Harness
 
 Usage:
-  arch up [--config arch.yaml] [--keep-worktrees]
+  archie up [--config arch.yaml] [--keep-worktrees]
         Start ARCH and launch Archie
 
-  arch down
+  archie down
         Gracefully shut down all agents and clean up
 
-  arch status
+  archie status
         Show current state of a running ARCH session
 
-  arch init [--name "My Project"] [--github owner/repo]
+  archie init [--name "My Project"] [--github owner/repo]
         Scaffold arch.yaml + personas/ + BRIEF.md in current directory.
         If --github is provided: creates labels and default milestones in the repo.
 """
@@ -92,7 +92,7 @@ def remove_pid_file(state_dir: Path) -> None:
 
 
 # ============================================================================
-# arch up
+# archie up
 # ============================================================================
 
 
@@ -105,7 +105,7 @@ async def cmd_up(args: argparse.Namespace) -> int:
 
     if not config_path.exists():
         print(f"Error: Config file not found: {config_path}")
-        print("Run 'arch init' to create a new project.")
+        print("Run 'archie init' to create a new project.")
         return 1
 
     state_dir = get_state_dir(config_path)
@@ -114,7 +114,7 @@ async def cmd_up(args: argparse.Namespace) -> int:
     existing_pid = read_pid_file(state_dir)
     if existing_pid:
         print(f"Error: ARCH is already running (PID {existing_pid})")
-        print("Use 'arch status' to check the current state or 'arch down' to stop.")
+        print("Use 'archie status' to check the current state or 'archie down' to stop.")
         return 1
 
     print_banner()
@@ -151,7 +151,7 @@ async def cmd_up(args: argparse.Namespace) -> int:
 
 
 # ============================================================================
-# arch down
+# archie down
 # ============================================================================
 
 
@@ -177,7 +177,7 @@ def cmd_down(args: argparse.Namespace) -> int:
 
 
 # ============================================================================
-# arch send
+# archie send
 # ============================================================================
 
 
@@ -190,7 +190,7 @@ def cmd_send(args: argparse.Namespace) -> int:
 
     if not state_dir.exists():
         print("Error: ARCH state directory not found.")
-        print("Run 'arch up' first to start ARCH.")
+        print("Run 'archie up' first to start ARCH.")
         return 1
 
     # Check if ARCH is running
@@ -211,13 +211,13 @@ def cmd_send(args: argparse.Namespace) -> int:
     if pid:
         print("Archie will see this message on next get_messages call.")
     else:
-        print("Start ARCH with 'arch up' - Archie will auto-resume to handle the message.")
+        print("Start ARCH with 'archie up' - Archie will auto-resume to handle the message.")
 
     return 0
 
 
 # ============================================================================
-# arch status
+# archie status
 # ============================================================================
 
 
@@ -295,7 +295,7 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 
 # ============================================================================
-# arch init
+# archie init
 # ============================================================================
 
 
@@ -461,7 +461,7 @@ github:
     print("Done! Next steps:")
     print("  1. Edit BRIEF.md to describe your project goals")
     print("  2. Review arch.yaml configuration")
-    print("  3. Run 'arch up' to start")
+    print("  3. Run 'archie up' to start")
 
     return 0
 
@@ -535,7 +535,7 @@ def setup_github(repo: str) -> None:
 def main() -> int:
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        prog="arch",
+        prog="archie",
         description="ARCH - Agent Runtime & Coordination Harness",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
@@ -547,17 +547,17 @@ Commands:
   init    Scaffold a new ARCH project
 
 Examples:
-  arch init --name "My App" --github myorg/myapp
-  arch up
-  arch send "Please review the test results"
-  arch status
-  arch down
+  archie init --name "My App" --github myorg/myapp
+  archie up
+  archie send "Please review the test results"
+  archie status
+  archie down
 """
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
 
-    # arch up
+    # archie up
     up_parser = subparsers.add_parser("up", help="Start ARCH and launch Archie")
     up_parser.add_argument(
         "--config", "-c",
@@ -570,7 +570,7 @@ Examples:
         help="Don't remove worktrees on shutdown"
     )
 
-    # arch down
+    # archie down
     down_parser = subparsers.add_parser("down", help="Gracefully shut down")
     down_parser.add_argument(
         "--config", "-c",
@@ -578,7 +578,7 @@ Examples:
         help=f"Path to config file (default: {DEFAULT_CONFIG})"
     )
 
-    # arch send
+    # archie send
     send_parser = subparsers.add_parser("send", help="Send a message to Archie")
     send_parser.add_argument(
         "message",
@@ -590,7 +590,7 @@ Examples:
         help=f"Path to config file (default: {DEFAULT_CONFIG})"
     )
 
-    # arch status
+    # archie status
     status_parser = subparsers.add_parser("status", help="Show current state")
     status_parser.add_argument(
         "--config", "-c",
@@ -598,7 +598,7 @@ Examples:
         help=f"Path to config file (default: {DEFAULT_CONFIG})"
     )
 
-    # arch init
+    # archie init
     init_parser = subparsers.add_parser("init", help="Scaffold a new project")
     init_parser.add_argument(
         "--name", "-n",

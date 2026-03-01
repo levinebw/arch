@@ -449,7 +449,7 @@ class TestCmdSend:
         assert result == 1
         captured = capsys.readouterr()
         assert "not found" in captured.out
-        assert "arch up" in captured.out.lower()
+        assert "archie up" in captured.out.lower()
 
     def test_main_send(self, tmp_path, capsys):
         """main send command works."""
