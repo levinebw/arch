@@ -66,16 +66,18 @@ Each item notes which step introduced it and which step it must be fixed by.
 
 - [x] **CRITICAL: Agents block on permission approval** — FIXED ([#4](https://github.com/AppSecHQ/arch/issues/4)). Implemented three-layer permission system:
   1. `--permission-mode acceptEdits` — auto-approves Read, Edit, Write, Glob, Grep
-  2. `--allowedTools` whitelist — DEFAULT_ALLOWED_TOOLS_ALL and DEFAULT_ALLOWED_TOOLS_ARCHIE constants, merged with user-configured `permissions.allowed_tools` from arch.yaml
-  3. `--permission-prompt-tool mcp__arch__handle_permission_request` — new MCP tool that blocks like escalate_to_user when agent requests unlisted tool
+  2. `--allowedTools` whitelist — `DEFAULT_ALLOWED_TOOLS_ALL` (includes all worker MCP tools + git patterns) and `DEFAULT_ALLOWED_TOOLS_ARCHIE` (includes all Archie MCP tools + `Bash(gh *)`), merged with user-configured `permissions.allowed_tools` from arch.yaml
+  3. `--permission-prompt-tool mcp__arch__handle_permission_request` — delegates unapproved tool requests to dashboard (enabled, not commented out)
 
   Runtime "always allow" also implemented:
-  - Dashboard shows [y]once [a]lways [n]o for permission requests
+  - Dashboard shows `[y]once [a]lways [n]o` for permission requests
   - "always" choice adds tool to in-memory `_runtime_allowed` dict (session-scoped)
   - Subsequent requests for same tool auto-approve without prompting
 
+  Review fix (`db2f061`): Added MCP tools to default allowed lists (without them agents still blocked on first MCP call), fixed `Bash(git:*)` → `Bash(git *)` syntax, enabled `--permission-prompt-tool` (was commented out), moved `handle_permission_request` from `WORKER_TOOLS` to `SYSTEM_TOOLS` (callable by dispatch but not visible in agent tool catalogs).
+
   Files modified: orchestrator.py, session.py, container.py, mcp_server.py, dashboard.py
-  Tests added: 14 new tests (437 total)
+  Tests: 17 new tests (440 total)
 
 - [ ] **`atexit` handler fires during tests** — "Emergency cleanup on exit" prints 8 times during test suite. The `atexit.register` in `_register_signal_handlers` is never unregistered. Add `atexit.unregister` in `_restore_signal_handlers` or guard the handler against test contexts.
 - [ ] **`_permission_gate` uses blocking `input()`** — `input()` blocks the async event loop. Works for CLI usage but prevents automated/headless startup. Consider `asyncio.to_thread(input)` or a callback pattern.
@@ -94,6 +96,12 @@ Each item notes which step introduced it and which step it must be fixed by.
 - [ ] **Escalation answer not verified** — After calling `answer_escalation()`, the UI immediately clears the escalation state without checking the return value. If `answer_escalation()` returns `False` (decision not found), the user loses their input with no error feedback. Check return value and show error if needed.
 - [ ] **Timestamps display UTC, not local time** — `format_timestamp` shows UTC. For a local dev tool, local time is more natural. Consider `dt.astimezone().strftime(...)`.
 - [ ] **No queued escalation count** — Only the first pending decision is shown (`decisions[0]`). If multiple escalations queue up, user has no indication of how many remain. Add a "(1 of N)" indicator.
+
+---
+
+## CLI (Step 12)
+
+- [x] **CLI command conflicts with `/usr/bin/arch`** — FIXED (`dc002fb`). Renamed CLI entry point from `arch` to `archie`. Config file remains `arch.yaml` (system name, not CLI command). All help text, error messages, and examples updated.
 
 ---
 

@@ -3,8 +3,8 @@
 ## Current State
 
 **Steps Completed: 1-13 of 13** ✅
-**Tests: 423 passing**
-**Last Commit:** 15cabc5
+**Tests: 440 passing**
+**Last Commit:** dc002fb
 
 ## Completed Components
 
@@ -29,26 +29,20 @@
 
 ARCH v1 implementation is complete per SPEC-AGENT-HARNESS.md.
 
-## P0 Bug Fix Required
+## Post-Build Fixes
 
-### Issue #4: Agent permissions block all execution
+### Issue #4: Agent permissions — FIXED
 
-**UAT revealed that no agent can execute.** Agents spawned with `--print` block indefinitely waiting for tool permission approval because there's no TTY. See [#4](https://github.com/AppSecHQ/arch/issues/4) for full design.
+UAT revealed agents blocked on permission prompts (no TTY). Builder implemented three-layer permission system (`e633bf9`). Review found 4 bugs; fixed in `db2f061`:
 
-**Three-layer permission system:**
+1. MCP tools missing from default allowed lists (agents still blocked on every MCP call)
+2. Wrong Bash pattern syntax: `Bash(git:*)` → `Bash(git *)` per Claude CLI docs
+3. `--permission-prompt-tool` was commented out (no race condition — MCP starts before agents)
+4. `handle_permission_request` was in `WORKER_TOOLS` (agents could call it directly) — moved to `SYSTEM_TOOLS`
 
-1. **`--permission-mode acceptEdits`** — auto-approves Read, Edit, Write, Glob, Grep for all agents
-2. **`--allowedTools` whitelist** — pre-approves MCP tools + common bash patterns per role
-3. **`--permission-prompt-tool`** — delegates unapproved tool requests to dashboard via new `handle_permission_request` MCP tool
+### CLI rename: `arch` → `archie` — FIXED
 
-**Files to modify:**
-- `arch/orchestrator.py` — `PermissionsConfig` gets `allowed_tools: list[str]`, default tool lists, pass to `AgentConfig`
-- `arch/session.py` — `AgentConfig` gets `allowed_tools` + `permission_prompt_tool`, `Session.spawn()` builds CLI flags
-- `arch/mcp_server.py` — new `handle_permission_request` tool (blocks like `escalate_to_user`)
-- `arch/dashboard.py` — permission requests appear via existing pending decisions UI
-- `arch.yaml` parsing — read `permissions.allowed_tools` per role
-
-See Issue #4 for full implementation spec including default tool lists, config format, and test requirements.
+`/usr/bin/arch` is a macOS system binary. Renamed CLI entry point to `archie` (`dc002fb`). Config file stays `arch.yaml`.
 
 ---
 
