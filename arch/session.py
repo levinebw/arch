@@ -245,7 +245,7 @@ class Session:
             self._process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+                stderr=None,  # Inherit parent's stderr so errors are visible
                 cwd=self.config.worktree if self.config.worktree else None,
             )
 
@@ -327,15 +327,6 @@ class Session:
         self._running = False
         logger.info(f"Session {self.agent_id} exited with code {exit_code}")
 
-        # Capture stderr if available (critical for diagnosing exit code != 0)
-        stderr_text = ""
-        if self._process and self._process.stderr:
-            try:
-                stderr_bytes = await self._process.stderr.read()
-                stderr_text = stderr_bytes.decode("utf-8", errors="replace").strip()
-            except Exception:
-                pass
-
         # Persist session_id if we got one
         if self._session_id:
             self.state.update_agent(
@@ -346,13 +337,10 @@ class Session:
         if exit_code != 0:
             # Unexpected exit - set error status and notify Archie
             self.state.update_agent(self.config.agent_id, status="error")
-            error_detail = f"Agent {self.config.agent_id} exited with code {exit_code}."
-            if stderr_text:
-                # Truncate long stderr for the message (keep full version in logs)
-                short_stderr = stderr_text[:500]
-                error_detail += f"\nstderr: {short_stderr}"
-                logger.error(f"Session {self.agent_id} stderr: {stderr_text}")
-            self.state.add_message("harness", "archie", error_detail)
+            self.state.add_message(
+                "harness", "archie",
+                f"Agent {self.config.agent_id} exited with code {exit_code}."
+            )
             logger.error(f"Session {self.agent_id} exited with non-zero code: {exit_code}")
         else:
             # Normal exit
