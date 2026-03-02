@@ -474,7 +474,7 @@ class Orchestrator:
 
             # Step 2: Initialize state store
             logger.info("Step 2: Initializing state store...")
-            state_dir = Path(self.config.settings.state_dir)
+            state_dir = Path(self.config.settings.state_dir).resolve()
             state_dir.mkdir(parents=True, exist_ok=True)
             self.state = StateStore(state_dir)
             self.state.init_project(

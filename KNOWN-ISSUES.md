@@ -37,6 +37,7 @@ Each item notes which step introduced it and which step it must be fixed by.
 - [ ] **BRIEF.md regex fails on whitespace** — regex for updating Current Status section assumes exact formatting. Whitespace variations cause silent failures.
 - [ ] **GitHub CLI FileNotFoundError opaque** — when `gh` not installed, error message is generic `str(e)`. Add explicit handling with install instructions.
 - [ ] **Logging inconsistent** — `logger` imported but only used in a few places. Add logging for all error paths.
+- [ ] **SSE handler TypeError on client disconnect** — when an MCP client disconnects, `handle_sse()` in `create_app()` triggers `TypeError: 'NoneType' object is not callable` in Starlette routing. The SSE transport has already handled the response, but the function tries to return `Response()` after the connection is gone. Doesn't break functionality but logs noisy errors on every disconnect. Found by smoke tests.
 
 ---
 
@@ -85,6 +86,7 @@ Each item notes which step introduced it and which step it must be fixed by.
 - [ ] **`run()` loop polls at 1-second interval** — `await asyncio.sleep(1)` is a polling loop to check Archie's status. Consider using an `asyncio.Event` that gets set by the exit callback instead.
 - [ ] **No token budget enforcement** — `token_budget_usd` is parsed from config and displayed in the cost summary, but never checked during runtime. Agents can exceed the budget without warning.
 - [ ] **No BRIEF.md read at startup** — Spec says "Archie reads BRIEF.md at startup." The orchestrator creates the prompt telling Archie to read it, but doesn't inject its contents. If BRIEF.md is large, Archie may not read it immediately.
+- [x] **CRITICAL: Relative `state_dir` breaks MCP config path** — FIXED. `state_dir: "./state"` in arch.yaml was used as-is (relative). `generate_mcp_config()` wrote config to `state/archie-mcp.json` and `--mcp-config state/archie-mcp.json` was passed to the claude subprocess. But the subprocess cwd is the agent's worktree (`.worktrees/archie/`), so the relative path didn't resolve. Claude never found the MCP config, never connected, 0 tokens. Fix: `Path(state_dir).resolve()` in orchestrator startup. Found in UAT #3.
 
 ---
 

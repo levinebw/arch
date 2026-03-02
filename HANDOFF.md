@@ -3,9 +3,8 @@
 ## Current State
 
 **Steps Completed: 1-13 of 13** ✅
-**Tests: 440 passing**
-**Last Commit:** 029cd17
-**UAT Status:** In progress — Archie launches but hangs (0 tokens). Fix pending commit.
+**Tests: 459 passing** (440 unit/integration + 13 smoke + 6 E2E)
+**UAT Status:** UAT #3 failed — relative `state_dir` path broke MCP config. Fixed, awaiting UAT #4.
 
 ## Completed Components
 
@@ -50,13 +49,32 @@ UAT #1 revealed agents blocked on permission prompts (no TTY). Builder implement
 
 `/usr/bin/arch` is a macOS system binary. Renamed all CLI user-facing references to `archie`. Config file stays `arch.yaml`. No `pyproject.toml` yet — run as `python arch.py up`.
 
-### Path resolution issue (known, not yet fixed)
+### Path resolution issue — PARTIALLY FIXED
 
-`repo: "."` and `state_dir: "./state"` in arch.yaml resolve relative to **cwd**, not the config file location. Workaround: run from the project directory. Proper fix: resolve relative to `config_path.parent` in orchestrator.
+`state_dir: "./state"` now resolved to absolute via `.resolve()` in orchestrator startup. This was the UAT #3 blocker: `--mcp-config state/archie-mcp.json` was relative, but claude's cwd is the worktree (`.worktrees/archie/`), so it couldn't find the config. `repo: "."` already called `.resolve()`. Still must run from the project directory (config-relative resolution not yet implemented).
 
-### Test coverage gap (known)
+### Test coverage gap — PARTIALLY ADDRESSED
 
-All 440 tests pass but every test mocks `create_subprocess_exec`, Docker, and MCP server start/stop. No test runs a real `claude` process connecting to a real MCP server. All UAT bugs (permission blocking, tool discovery, path resolution) were invisible to the test suite. Need a real smoke test that starts the MCP server and has a client connect and discover tools.
+Added `tests/test_smoke.py` (13 tests) — starts a REAL MCP server (uvicorn) and connects REAL MCP clients via SSE. Tests cover:
+- Server lifecycle (start/bind/stop)
+- Tool discovery for worker vs Archie roles
+- SYSTEM_TOOLS visibility (the UAT #2 bug)
+- GitHub tools conditional on config
+- Tool dispatch (send_message, update_status)
+- Access control (worker denied Archie-only tools)
+- Multi-agent concurrent connections
+- Agent-to-agent messaging through real MCP
+- MCP config URL generation
+
+Added `tests/test_e2e.py` (6 tests) — full orchestrator lifecycle with real MCP server. Tests cover:
+- Full lifecycle: startup → spawn agent via MCP → messaging → completion → teardown → shutdown
+- Worktree + CLAUDE.md creation via MCP tool call
+- Access control enforced through real MCP + orchestrator callbacks
+- Multi-agent inter-agent messaging
+- Git merge triggered via MCP request_merge tool
+- Shutdown cleanup (worktrees removed, server stopped)
+
+Remaining gap: no test runs a real `claude` CLI process (requires API key). The smoke tests found a new bug: SSE handler TypeError on client disconnect (logged in KNOWN-ISSUES.md).
 
 ## Open GitHub Issues
 
@@ -117,5 +135,6 @@ GIT_CONFIG_GLOBAL=/dev/null python -m pytest tests/ -v
 - `tests/test_mcp_server.py` — SYSTEM_TOOLS tests, tool catalog tests
 - `tests/test_session.py` — fixed Bash pattern syntax in tests
 - `tests/test_cli.py` — updated "archie up" reference
-- `KNOWN-ISSUES.md` — documented all fixes
+- `tests/test_smoke.py` — NEW: 12 end-to-end smoke tests with real MCP server + SSE clients
+- `KNOWN-ISSUES.md` — documented all fixes + SSE disconnect bug found by smoke tests
 - `HANDOFF.md` — this file
