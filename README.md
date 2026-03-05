@@ -76,6 +76,44 @@ settings:
 
 ---
 
+## FAQ
+
+### What is ARCH for?
+
+ARCH is for anyone who wants to throw a team of AI agents at a software project instead of doing everything in a single chat session. You describe what you want built, and Archie — the lead agent — breaks the work down, spins up specialists (frontend dev, backend dev, QA, security auditor, copywriter), and coordinates them working in parallel across isolated git branches. You supervise from a dashboard, answer questions, and approve merges.
+
+It's the difference between pair-programming with one AI and managing a small AI development shop.
+
+### What kinds of projects can I build with this?
+
+Anything you'd assign to a small dev team:
+
+- **Full-stack web apps** — Archie assigns frontend and backend agents to work simultaneously, with QA writing tests in parallel
+- **Security audits & scanning tools** — dedicated security agents review code while others build features
+- **Refactoring & migration projects** — multiple agents work through different modules concurrently
+- **MVPs and prototypes** — go from idea to deployed app with agents handling design, implementation, and testing
+- **Documentation & content projects** — copywriter agents draft docs while devs build the thing being documented
+
+The sweet spot is projects with parallelizable work — tasks that a human team would split across 2-5 people. Single-file scripts don't need an orchestrator. A full-stack app with a dashboard, API, auth, tests, and docs? That's where ARCH shines.
+
+### Has this actually been used to build something?
+
+Yes. A prior iteration of this multi-agent approach was used to build [SkillScan](https://skillscan.appsechq.com), a security scanning tool that analyzes vulnerabilities in AI agent skills. The project involved a coordinated team of AI agents — designer, frontend dev, backend dev, QA — working together to produce a deployed application with a dashboard, scanning engine, severity classification, and analysis notes. It's a concrete example of what a small AI team can ship when properly coordinated.
+
+### How is this different from just using Claude Code?
+
+Claude Code is a single agent — one session, one context window, one thread of work. ARCH runs *multiple* Claude Code sessions simultaneously, each with a dedicated role, its own git worktree, and a shared message bus for coordination. Think of it as the difference between one developer and a team.
+
+### Do I need Docker?
+
+No. Agents run as local processes by default. Docker sandboxing is opt-in per agent for additional isolation (useful for untrusted code execution or security-sensitive roles).
+
+### How much does it cost to run?
+
+ARCH tracks token usage and costs per agent in real time on the dashboard. Costs depend on how many agents you spawn, which models you use, and how complex the project is. You can set a `token_budget_usd` ceiling in `arch.yaml` to cap spend.
+
+---
+
 ## Status
 
 Early development. See [SPEC-AGENT-HARNESS.md](./SPEC-AGENT-HARNESS.md) for the full technical specification.
