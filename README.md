@@ -29,6 +29,30 @@ Archie (the Lead Agent) reads your project, decomposes the work, and dynamically
 
 ---
 
+## Dashboard
+
+ARCH includes a live terminal dashboard built with [Textual](https://textual.textualize.io/) that shows you everything happening across your agent team in real time.
+
+### Main View
+
+The main dashboard displays four panels: **Agents** (status and current task), **Activity Log** (inter-agent messages as they happen), **Costs** (per-agent token spend and budget), and **Escalations** (questions from Archie that need your input).
+
+![ARCH Dashboard — Main View](docs/dashboard-main.png)
+
+### Keyboard Shortcuts
+
+Press `?` from the dashboard to see all available shortcuts — quit, view agent logs, open the full message bus, and more.
+
+![ARCH Dashboard — Help Screen](docs/dashboard-help.png)
+
+### Message Log
+
+Press `m` to open the full message bus showing all inter-agent communication with timestamps, senders, and recipients.
+
+![ARCH Dashboard — Message Log](docs/dashboard-messages.png)
+
+---
+
 ## Quick Start
 
 ```bash
