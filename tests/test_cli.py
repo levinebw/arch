@@ -28,6 +28,7 @@ cmd_init = arch_cli.cmd_init
 cmd_status = arch_cli.cmd_status
 cmd_down = arch_cli.cmd_down
 cmd_send = arch_cli.cmd_send
+cmd_dashboard = arch_cli.cmd_dashboard
 main = arch_cli.main
 DEFAULT_ARCH_YAML = arch_cli.DEFAULT_ARCH_YAML
 DEFAULT_BRIEF_MD = arch_cli.DEFAULT_BRIEF_MD
@@ -114,21 +115,33 @@ class TestGetStateDir:
         assert result == Path("/custom/state")
 
     def test_get_state_dir_default(self, tmp_path):
-        """get_state_dir returns default when no config."""
+        """get_state_dir returns resolved path relative to config parent when no config."""
         config_path = tmp_path / "nonexistent.yaml"
 
         result = get_state_dir(config_path)
-        assert result == Path("./state")
+        assert result == (tmp_path / "state").resolve()
 
     def test_get_state_dir_no_settings(self, tmp_path):
-        """get_state_dir returns default when no settings in config."""
+        """get_state_dir returns resolved default when no settings in config."""
         config_path = tmp_path / "arch.yaml"
         config_path.write_text(yaml.dump({
             "project": {"name": "Test"}
         }))
 
         result = get_state_dir(config_path)
-        assert result == Path("./state")
+        assert result == (tmp_path / "state").resolve()
+
+    def test_get_state_dir_relative(self, tmp_path):
+        """get_state_dir resolves relative state_dir relative to config file."""
+        config_path = tmp_path / "arch.yaml"
+        config_path.write_text(yaml.dump({
+            "settings": {
+                "state_dir": "./my-state"
+            }
+        }))
+
+        result = get_state_dir(config_path)
+        assert result == (tmp_path / "my-state").resolve()
 
 
 class TestCmdInit:
@@ -290,12 +303,12 @@ class TestCmdStatus:
         state_dir = tmp_path / "state"
         state_dir.mkdir()
 
-        # Create token_usage.json
+        # Create usage.json (TokenTracker output file)
         usage = {
             "archie": {"cost_usd": 0.05},
             "frontend-1": {"cost_usd": 0.02}
         }
-        (state_dir / "token_usage.json").write_text(json.dumps(usage))
+        (state_dir / "usage.json").write_text(json.dumps(usage))
         (state_dir / "agents.json").write_text("{}")
 
         config_path = tmp_path / "arch.yaml"
@@ -554,3 +567,79 @@ class TestDefaultTemplates:
         assert "## Constraints" in content
         assert "## Current Status" in content
         assert "## Decisions Log" in content
+
+
+class TestCmdDashboard:
+    """Tests for archie dashboard command."""
+
+    def test_dashboard_no_config(self, tmp_path, capsys):
+        """dashboard fails when config doesn't exist."""
+        args = MagicMock()
+        args.config = str(tmp_path / "nonexistent.yaml")
+
+        result = cmd_dashboard(args)
+
+        assert result == 1
+        captured = capsys.readouterr()
+        assert "not found" in captured.out
+
+    def test_dashboard_creates_state_dir(self, tmp_path, capsys):
+        """dashboard creates state dir if missing."""
+        config_path = tmp_path / "arch.yaml"
+        state_dir = tmp_path / "state"
+        config_path.write_text(yaml.dump({
+            "settings": {
+                "state_dir": str(state_dir),
+                "mcp_port": 3999,
+            }
+        }))
+
+        args = MagicMock()
+        args.config = str(config_path)
+
+        with patch("arch.dashboard.Dashboard.run") as mock_run:
+            result = cmd_dashboard(args)
+
+        assert result == 0
+        assert state_dir.exists()
+        mock_run.assert_called_once()
+
+    def test_dashboard_reads_config(self, tmp_path):
+        """dashboard reads mcp_port and budget from config."""
+        config_path = tmp_path / "arch.yaml"
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+        config_path.write_text(yaml.dump({
+            "settings": {
+                "state_dir": str(state_dir),
+                "mcp_port": 4000,
+                "token_budget_usd": 15.0,
+            }
+        }))
+
+        args = MagicMock()
+        args.config = str(config_path)
+
+        with patch("arch.dashboard.Dashboard.run") as mock_run:
+            with patch("arch.dashboard.Dashboard.__init__", return_value=None) as mock_init:
+                result = cmd_dashboard(args)
+
+        mock_init.assert_called_once()
+        call_kwargs = mock_init.call_args[1]
+        assert call_kwargs["mcp_port"] == 4000
+        assert call_kwargs["budget"] == 15.0
+
+    def test_main_dashboard(self, tmp_path, capsys):
+        """main dashboard command works."""
+        config_path = tmp_path / "arch.yaml"
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+        config_path.write_text(yaml.dump({
+            "settings": {"state_dir": str(state_dir), "mcp_port": 3999}
+        }))
+
+        with patch("sys.argv", ["archie", "dashboard", "--config", str(config_path)]):
+            with patch("arch.dashboard.Dashboard.run"):
+                result = main()
+
+        assert result == 0

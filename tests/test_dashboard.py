@@ -26,6 +26,7 @@ from arch.dashboard import (
 )
 from arch.state import StateStore
 from arch.token_tracker import TokenTracker
+from pathlib import Path
 
 
 # ============================================================================
@@ -657,3 +658,153 @@ class TestDashboardIntegration:
 
             # Verify MCP server called
             mock_mcp_server.answer_escalation.assert_called_once()
+
+
+# ============================================================================
+# Standalone Mode Tests
+# ============================================================================
+
+
+class TestDashboardStandaloneInit:
+    """Tests for Dashboard standalone mode initialization."""
+
+    def test_standalone_init_creates_state_and_tracker(self, tmp_path):
+        """Standalone mode creates its own StateStore and TokenTracker."""
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+
+        app = Dashboard(state_dir=state_dir, mcp_port=3999)
+        assert app._standalone is True
+        assert app.state is not None
+        assert app.token_tracker is not None
+        assert app.mcp_server is None
+        assert app.mcp_port == 3999
+
+    def test_standalone_init_with_budget(self, tmp_path):
+        """Standalone mode accepts budget parameter."""
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+
+        app = Dashboard(state_dir=state_dir, mcp_port=3999, budget=10.0)
+        assert app.budget == 10.0
+
+    def test_inprocess_mode_not_standalone(self, mock_state, mock_token_tracker):
+        """In-process mode sets _standalone to False."""
+        app = Dashboard(state=mock_state, token_tracker=mock_token_tracker)
+        assert app._standalone is False
+
+
+class TestDashboardStandaloneRefresh:
+    """Tests for standalone mode refresh behavior."""
+
+    @pytest.mark.asyncio
+    async def test_standalone_refresh_reloads_state(self, tmp_path):
+        """Standalone mode calls reload() on each refresh."""
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+
+        app = Dashboard(state_dir=state_dir, mcp_port=3999)
+
+        async with app.run_test() as pilot:
+            # Write agent data to state files after init
+            app.state.register_agent("test-1", "test", "/worktree/test")
+            app.state._flush()
+
+            # Create a fresh state store reading same dir (simulates orchestrator writing)
+            other_state = StateStore(state_dir)
+            other_state.register_agent("test-2", "test", "/worktree/test-2")
+
+            # Refresh should pick up the new agent
+            app._refresh_data()
+            await pilot.pause()
+
+            agents = app.state.list_agents()
+            assert len(agents) == 2
+
+
+class TestDashboardStandaloneEscalation:
+    """Tests for standalone mode escalation handling."""
+
+    @pytest.mark.asyncio
+    async def test_standalone_escalation_posts_http(self, tmp_path):
+        """Standalone mode posts escalation answers via HTTP."""
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+
+        app = Dashboard(state_dir=state_dir, mcp_port=3999)
+
+        with patch("arch.dashboard.urllib.request.urlopen") as mock_urlopen:
+            success = app._post_escalation_answer("decision-123", "yes")
+            assert success is True
+            mock_urlopen.assert_called_once()
+
+            # Verify the request
+            call_args = mock_urlopen.call_args
+            req = call_args[0][0]
+            assert "decision-123" in req.full_url
+            assert req.method == "POST"
+
+    @pytest.mark.asyncio
+    async def test_standalone_escalation_handles_connection_error(self, tmp_path):
+        """Standalone mode handles HTTP errors gracefully."""
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+
+        app = Dashboard(state_dir=state_dir, mcp_port=3999)
+
+        with patch("arch.dashboard.urllib.request.urlopen", side_effect=Exception("Connection refused")):
+            success = app._post_escalation_answer("decision-123", "yes")
+            assert success is False
+
+
+class TestDashboardOnUnmount:
+    """Tests for on_unmount cleanup."""
+
+    @pytest.mark.asyncio
+    async def test_on_unmount_cancels_refresh_task(self, mock_state, mock_token_tracker):
+        """on_unmount cancels the refresh task."""
+        app = Dashboard(state=mock_state, token_tracker=mock_token_tracker)
+
+        async with app.run_test() as pilot:
+            # Refresh task should exist
+            assert app._refresh_task is not None
+            assert not app._refresh_task.cancelled()
+
+        # After unmount, task should be cancelled
+        assert app._refresh_task is None
+
+
+class TestDashboardOrchestratorConnection:
+    """Tests for orchestrator connection checking."""
+
+    def test_check_connection_no_port(self, tmp_path):
+        """No port means not connected."""
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+
+        app = Dashboard(state_dir=state_dir, mcp_port=None)
+        app._check_orchestrator_connection()
+        assert app._orchestrator_connected is False
+
+    def test_check_connection_unreachable(self, tmp_path):
+        """Unreachable port means not connected."""
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+
+        app = Dashboard(state_dir=state_dir, mcp_port=39999)
+
+        with patch("arch.dashboard.urllib.request.urlopen", side_effect=Exception("refused")):
+            app._check_orchestrator_connection()
+            assert app._orchestrator_connected is False
+
+    def test_check_connection_success(self, tmp_path):
+        """Reachable port means connected."""
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+
+        app = Dashboard(state_dir=state_dir, mcp_port=3999)
+
+        with patch("arch.dashboard.urllib.request.urlopen") as mock:
+            mock.return_value = MagicMock()
+            app._check_orchestrator_connection()
+            assert app._orchestrator_connected is True

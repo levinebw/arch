@@ -53,14 +53,16 @@ def print_banner():
 
 
 def get_state_dir(config_path: Path) -> Path:
-    """Get the state directory from config or use default."""
+    """Get the state directory from config, resolved relative to the config file."""
     import yaml
 
+    config_dir = config_path.resolve().parent
     if config_path.exists():
         with open(config_path) as f:
             config = yaml.safe_load(f)
-        return Path(config.get("settings", {}).get("state_dir", "./state"))
-    return Path("./state")
+        raw = config.get("settings", {}).get("state_dir", "./state")
+        return (config_dir / raw).resolve()
+    return (config_dir / "state").resolve()
 
 
 def write_pid_file(state_dir: Path) -> None:
@@ -98,8 +100,18 @@ def remove_pid_file(state_dir: Path) -> None:
 
 async def cmd_up(args: argparse.Namespace) -> int:
     """Start ARCH and launch Archie."""
+    import logging
     from arch.orchestrator import Orchestrator
-    from arch.dashboard import Dashboard
+
+    # Configure logging so orchestrator output is visible
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(name)s] %(message)s",
+        datefmt="%H:%M:%S",
+    )
+    # Suppress noisy uvicorn/httpcore logs
+    logging.getLogger("uvicorn").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
 
     config_path = Path(args.config)
 
@@ -119,6 +131,7 @@ async def cmd_up(args: argparse.Namespace) -> int:
 
     print_banner()
     print(f"Starting ARCH with config: {config_path}")
+    print(f"Run 'archie dashboard' in another terminal to open the TUI.")
     print()
 
     # Write PID file
@@ -131,38 +144,7 @@ async def cmd_up(args: argparse.Namespace) -> int:
             remove_pid_file(state_dir)
             return 1
 
-        def on_dashboard_quit():
-            """User pressed 'q' in the dashboard."""
-            orchestrator._shutdown_requested = True
-
-        # Create dashboard and give orchestrator a reference for clean exit
-        dashboard_app = Dashboard(
-            state=orchestrator.state,
-            token_tracker=orchestrator.token_tracker,
-            mcp_server=orchestrator.mcp_server,
-            budget=orchestrator.config.settings.token_budget_usd,
-            on_quit=on_dashboard_quit,
-        )
-        orchestrator._dashboard = dashboard_app
-
-        # Run dashboard and orchestrator concurrently
-        dashboard_task = asyncio.create_task(dashboard_app.run_async())
-        orchestrator_task = asyncio.create_task(orchestrator.run())
-
-        # Wait for either to complete (dashboard quit or orchestrator shutdown)
-        done, pending = await asyncio.wait(
-            [dashboard_task, orchestrator_task],
-            return_when=asyncio.FIRST_COMPLETED,
-        )
-
-        # Cancel whichever is still running
-        for task in pending:
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
-
+        await orchestrator.run()
         return 0
 
     except KeyboardInterrupt:
@@ -241,6 +223,45 @@ def cmd_send(args: argparse.Namespace) -> int:
 
 
 # ============================================================================
+# archie dashboard
+# ============================================================================
+
+
+def cmd_dashboard(args: argparse.Namespace) -> int:
+    """Launch standalone dashboard TUI."""
+    import yaml
+    from arch.dashboard import Dashboard
+
+    config_path = Path(args.config)
+    if not config_path.exists():
+        print(f"Error: Config file not found: {config_path}")
+        print("Run 'archie init' to create a new project.")
+        return 1
+
+    with open(config_path) as f:
+        config = yaml.safe_load(f)
+
+    config_dir = config_path.resolve().parent
+    raw_state_dir = config.get("settings", {}).get("state_dir", "./state")
+    state_dir = (config_dir / raw_state_dir).resolve()
+    mcp_port = config.get("settings", {}).get("mcp_port", 3999)
+    budget = config.get("settings", {}).get("token_budget_usd")
+
+    if not state_dir.exists():
+        print(f"Warning: State directory '{state_dir}' not found.")
+        print("Start ARCH first with 'archie up', or the dashboard will show empty state.")
+        state_dir.mkdir(parents=True, exist_ok=True)
+
+    app = Dashboard(
+        state_dir=state_dir,
+        mcp_port=mcp_port,
+        budget=budget,
+    )
+    app.run()
+    return 0
+
+
+# ============================================================================
 # archie status
 # ============================================================================
 
@@ -297,7 +318,7 @@ def cmd_status(args: argparse.Namespace) -> int:
                     print(f"    └─ {task[:50]}...")
 
     # Show token usage if available
-    usage_path = state_dir / "token_usage.json"
+    usage_path = state_dir / "usage.json"
     if usage_path.exists():
         with open(usage_path) as f:
             usage = json.load(f)
@@ -564,15 +585,17 @@ def main() -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Commands:
-  up      Start ARCH and launch Archie
-  down    Gracefully shut down all agents
-  status  Show current state of running session
-  send    Send a message to Archie
-  init    Scaffold a new ARCH project
+  up         Start ARCH orchestrator (run in one terminal)
+  dashboard  Launch the monitoring TUI (run in another terminal)
+  down       Gracefully shut down all agents
+  status     Show current state of running session
+  send       Send a message to Archie
+  init       Scaffold a new ARCH project
 
 Examples:
   archie init --name "My App" --github myorg/myapp
-  archie up
+  archie up                                    # Terminal 1
+  archie dashboard                             # Terminal 2
   archie send "Please review the test results"
   archie status
   archie down
@@ -614,6 +637,14 @@ Examples:
         help=f"Path to config file (default: {DEFAULT_CONFIG})"
     )
 
+    # archie dashboard
+    dash_parser = subparsers.add_parser("dashboard", help="Launch the monitoring TUI")
+    dash_parser.add_argument(
+        "--config", "-c",
+        default=DEFAULT_CONFIG,
+        help=f"Path to config file (default: {DEFAULT_CONFIG})"
+    )
+
     # archie status
     status_parser = subparsers.add_parser("status", help="Show current state")
     status_parser.add_argument(
@@ -650,6 +681,8 @@ Examples:
         return cmd_down(args)
     elif args.command == "send":
         return cmd_send(args)
+    elif args.command == "dashboard":
+        return cmd_dashboard(args)
     elif args.command == "status":
         return cmd_status(args)
     elif args.command == "init":

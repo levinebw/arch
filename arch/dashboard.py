@@ -3,12 +3,20 @@ ARCH Dashboard
 
 Textual TUI dashboard for monitoring and interacting with ARCH.
 Displays agent status, activity log, costs, and handles user escalations.
+
+Can run in two modes:
+- In-process: receives StateStore/TokenTracker/MCPServer objects directly (tests)
+- Standalone: reads from state directory files, posts escalations via HTTP (production)
 """
 
 from __future__ import annotations
 
 import asyncio
+import json as json_mod
+import logging
+import urllib.request
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from textual.app import App, ComposeResult
@@ -30,6 +38,8 @@ if TYPE_CHECKING:
     from arch.mcp_server import MCPServer
     from arch.state import StateStore
     from arch.token_tracker import TokenTracker
+
+logger = logging.getLogger(__name__)
 
 # Refresh interval in seconds
 REFRESH_INTERVAL = 2.0
@@ -204,7 +214,7 @@ class CostsPanel(Static):
         content.update("\n".join(lines))
 
 
-class EscalationPanel(Static):
+class EscalationPanel(Container):
     """Panel for displaying and answering escalations."""
 
     question: reactive[str] = reactive("")
@@ -222,7 +232,6 @@ class EscalationPanel(Static):
         input_widget = self.query_one("#escalation-input", Input)
 
         if question:
-            # Check if this is a permission request
             if self.is_permission_request:
                 display = f"🔐 PERMISSION REQUEST:\n{question}\n"
                 display += "[y]es once  [a]lways  [n]o"
@@ -231,7 +240,7 @@ class EscalationPanel(Static):
                 display = f"⚠ ARCHIE ASKS: {question}"
                 if self.options:
                     display += f" [{'/'.join(self.options)}]"
-                input_widget.placeholder = "Type your answer..."
+                input_widget.placeholder = "Type your answer and press Enter..."
 
             q_widget.update(display)
             input_widget.disabled = False
@@ -304,6 +313,10 @@ class Dashboard(App):
     Main ARCH Dashboard application.
 
     Displays agent status, activity log, costs, and handles user escalations.
+
+    Two modes:
+    - In-process: pass state/token_tracker/mcp_server objects directly
+    - Standalone: pass state_dir and mcp_port to read from files + HTTP
     """
 
     CSS = """
@@ -335,7 +348,8 @@ class Dashboard(App):
     }
 
     #escalation-panel {
-        height: 3;
+        height: auto;
+        max-height: 8;
         border: solid red;
         padding: 0 1;
     }
@@ -437,11 +451,12 @@ class Dashboard(App):
 
     /* Input styling */
     #escalation-input {
-        height: 1;
+        height: 3;
     }
 
     #escalation-question {
-        height: 1;
+        height: auto;
+        max-height: 4;
     }
     """
 
@@ -466,28 +481,42 @@ class Dashboard(App):
 
     def __init__(
         self,
-        state: "StateStore",
-        token_tracker: "TokenTracker",
+        state: Optional["StateStore"] = None,
+        token_tracker: Optional["TokenTracker"] = None,
         mcp_server: Optional["MCPServer"] = None,
         budget: Optional[float] = None,
         on_quit: Optional[Callable[[], None]] = None,
+        # Standalone mode params
+        state_dir: Optional[Path] = None,
+        mcp_port: Optional[int] = None,
     ) -> None:
         """
         Initialize the dashboard.
 
-        Args:
-            state: StateStore instance for reading state.
-            token_tracker: TokenTracker instance for cost data.
-            mcp_server: MCPServer instance for answering escalations.
-            budget: Optional token budget in USD.
-            on_quit: Callback when user quits.
+        In-process mode: pass state, token_tracker, mcp_server directly.
+        Standalone mode: pass state_dir and mcp_port to read from files + HTTP.
         """
         super().__init__()
-        self.state = state
-        self.token_tracker = token_tracker
-        self.mcp_server = mcp_server
         self.budget = budget
         self.on_quit_callback = on_quit
+
+        if state_dir is not None:
+            # Standalone mode: read from files, post escalations via HTTP
+            from arch.state import StateStore
+            from arch.token_tracker import TokenTracker
+
+            self.state = StateStore(state_dir)
+            self.token_tracker = TokenTracker(state_dir=state_dir)
+            self.mcp_server = None
+            self.mcp_port = mcp_port
+            self._standalone = True
+        else:
+            # In-process mode: use provided objects directly
+            self.state = state
+            self.token_tracker = token_tracker
+            self.mcp_server = mcp_server
+            self.mcp_port = None
+            self._standalone = False
 
         # Track seen messages to avoid duplicates
         self._seen_message_ids: set[str] = set()
@@ -497,6 +526,9 @@ class Dashboard(App):
 
         # Refresh task
         self._refresh_task: Optional[asyncio.Task] = None
+
+        # Orchestrator connection status (standalone mode)
+        self._orchestrator_connected = False
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -526,14 +558,29 @@ class Dashboard(App):
         # Initial refresh
         self._refresh_data()
 
+    def on_unmount(self) -> None:
+        """Cancel refresh task on unmount."""
+        if self._refresh_task:
+            self._refresh_task.cancel()
+            self._refresh_task = None
+
     async def _refresh_loop(self) -> None:
         """Periodically refresh dashboard data."""
         while True:
             await asyncio.sleep(REFRESH_INTERVAL)
-            self._refresh_data()
+            try:
+                self._refresh_data()
+            except Exception as e:
+                logger.debug(f"Dashboard refresh error: {e}")
 
     def _refresh_data(self) -> None:
         """Refresh all dashboard data from state."""
+        # In standalone mode, reload state from disk
+        if self._standalone:
+            self.state.reload()
+            self.token_tracker._load()
+            self._check_orchestrator_connection()
+
         # Update runtime
         project = self.state.get_project()
         self.runtime = format_runtime(project.get("started_at"))
@@ -542,6 +589,9 @@ class Dashboard(App):
         if project.get("status") == "complete":
             summary = project.get("summary", "All tasks complete.")
             self.sub_title = f"COMPLETE — {summary} — Press q to exit"
+        elif self._standalone:
+            conn = "Connected" if self._orchestrator_connected else "Not connected"
+            self.sub_title = f"Runtime: {self.runtime} · {conn}"
         else:
             self.sub_title = f"Runtime: {self.runtime}"
 
@@ -584,6 +634,38 @@ class Dashboard(App):
             escalation_panel.question = ""
             escalation_panel.options = []
 
+    def _check_orchestrator_connection(self) -> None:
+        """Check if the orchestrator is reachable (standalone mode)."""
+        if not self.mcp_port:
+            self._orchestrator_connected = False
+            return
+
+        try:
+            url = f"http://127.0.0.1:{self.mcp_port}/api/health"
+            req = urllib.request.Request(url, method="GET")
+            urllib.request.urlopen(req, timeout=1)
+            self._orchestrator_connected = True
+        except Exception:
+            self._orchestrator_connected = False
+
+    def _post_escalation_answer(self, decision_id: str, answer: str) -> bool:
+        """Post an escalation answer via HTTP to the MCP server."""
+        if not self.mcp_port:
+            return False
+
+        url = f"http://127.0.0.1:{self.mcp_port}/api/escalation/{decision_id}"
+        data = json_mod.dumps({"answer": answer}).encode()
+        req = urllib.request.Request(
+            url, data=data, method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            urllib.request.urlopen(req, timeout=5)
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to post escalation answer: {e}")
+            return False
+
     def on_input_submitted(self, event: Input.Submitted) -> None:
         """Handle escalation input submission."""
         escalation_panel = self.query_one("#escalation-panel", EscalationPanel)
@@ -603,7 +685,16 @@ class Dashboard(App):
                     answer = "no"
 
             # Answer the escalation
-            if self.mcp_server:
+            if self._standalone:
+                if not self._post_escalation_answer(decision_id, answer):
+                    activity_panel = self.query_one("#activity-panel", ActivityPanel)
+                    activity_panel.add_message({
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "from": "dashboard",
+                        "content": f"[stderr] Failed to send answer (orchestrator not connected)",
+                    })
+                    return
+            elif self.mcp_server:
                 self.mcp_server.answer_escalation(decision_id, answer)
 
             # Clear the input and question
@@ -680,57 +771,3 @@ class Dashboard(App):
 
     def action_view_agent_9(self) -> None:
         self._view_agent_log(8)
-
-
-def run_dashboard(
-    state: "StateStore",
-    token_tracker: "TokenTracker",
-    mcp_server: Optional["MCPServer"] = None,
-    budget: Optional[float] = None,
-    on_quit: Optional[Callable[[], None]] = None,
-) -> None:
-    """
-    Run the dashboard (blocking).
-
-    Args:
-        state: StateStore instance.
-        token_tracker: TokenTracker instance.
-        mcp_server: MCPServer instance for escalation handling.
-        budget: Optional token budget in USD.
-        on_quit: Callback when user quits.
-    """
-    app = Dashboard(
-        state=state,
-        token_tracker=token_tracker,
-        mcp_server=mcp_server,
-        budget=budget,
-        on_quit=on_quit,
-    )
-    app.run()
-
-
-async def run_dashboard_async(
-    state: "StateStore",
-    token_tracker: "TokenTracker",
-    mcp_server: Optional["MCPServer"] = None,
-    budget: Optional[float] = None,
-    on_quit: Optional[Callable[[], None]] = None,
-) -> None:
-    """
-    Run the dashboard asynchronously.
-
-    Args:
-        state: StateStore instance.
-        token_tracker: TokenTracker instance.
-        mcp_server: MCPServer instance for escalation handling.
-        budget: Optional token budget in USD.
-        on_quit: Callback when user quits.
-    """
-    app = Dashboard(
-        state=state,
-        token_tracker=token_tracker,
-        mcp_server=mcp_server,
-        budget=budget,
-        on_quit=on_quit,
-    )
-    await app.run_async()

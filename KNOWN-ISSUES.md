@@ -92,8 +92,8 @@ Each item notes which step introduced it and which step it must be fixed by.
 
 ## Dashboard (Step 9)
 
-- [ ] **`_refresh_task` never cancelled** — The asyncio task created in `on_mount` runs an infinite `while True` loop and is never cancelled when the app exits. This can cause "Task was destroyed but it is pending" warnings. Add task cancellation in an `on_unmount` handler or use Textual's `set_interval` instead.
-- [ ] **No exception handling in `_refresh_loop`** — If `_refresh_data()` raises any exception (e.g., state store unavailable, widget query fails), the entire refresh loop crashes silently and the dashboard stops updating with no indication to the user. Wrap in try/except with logging.
+- [x] **`_refresh_task` never cancelled** — FIXED. Added `on_unmount` handler that cancels the refresh task.
+- [x] **No exception handling in `_refresh_loop`** — FIXED. Wrapped in try/except to prevent silent crash.
 - [ ] **`_seen_message_ids` grows unbounded** — Messages are tracked forever in the `_seen_message_ids` set to avoid duplicates, but there's no pruning. In long-running sessions with many messages, this could consume significant memory. Consider capping the set size or using message timestamps.
 - [ ] **Escalation answer not verified** — After calling `answer_escalation()`, the UI immediately clears the escalation state without checking the return value. If `answer_escalation()` returns `False` (decision not found), the user loses their input with no error feedback. Check return value and show error if needed.
 - [ ] **Timestamps display UTC, not local time** — `format_timestamp` shows UTC. For a local dev tool, local time is more natural. Consider `dt.astimezone().strftime(...)`.
@@ -107,7 +107,23 @@ Each item notes which step introduced it and which step it must be fixed by.
 
 ---
 
+## Agent Context & State Persistence
+
+- [ ] **CRITICAL: Worker agents don't get context injection on restart** — When spawning worker agents, `orchestrator.py:1003-1011` does NOT pass `session_state` to `write_claude_md()`. Archie gets context injection (lines 804-827), but workers don't. If a worker calls `save_progress` and then crashes/restarts, the saved context sits in `agents.json` but is never re-injected into the agent's CLAUDE.md. Fix: fetch `state.get_agent(agent_id).context` before calling `write_claude_md()` and pass it as `session_state=`.
+- [ ] **No context compacting strategy** — Long-running agents that hit Claude's context window have no automated recovery. No mechanism to detect approaching token limits, summarize completed work, or start fresh with just saved progress. The spec mentions "continuity across context compactions and restarts" (line 273-274) but nothing is implemented. Needs: (1) proactive `save_progress` calls before compacting, (2) compact-and-resume cycle, (3) context window monitoring.
+- [ ] **No context window detection** — No mechanism to detect when an agent is approaching its token limit. Should monitor cumulative tokens and trigger a save-compact cycle before the agent hits the wall.
+
+---
+
 ## Potential Enhancements (v2)
+
+### ~~Detached Dashboard~~ — DONE
+
+Implemented: `archie dashboard` runs as a standalone process, reads state from files, posts escalations via HTTP to MCP server's `/api/escalation/{decision_id}` endpoint. `archie up` runs orchestrator only.
+
+### Auto-Discovery of Agent Personas
+
+`arch init` should scan for persona files and auto-generate the `agent_pool` section in `arch.yaml`. Convention: `agents/*.md` files (e.g., `agents/lead-developer.md` → role `lead-developer`). Also support legacy patterns like `AGENT-*.md` at repo root. Reduces setup friction — projects with persona files work out of the box without manually writing config.
 
 ### Skills Integration — [#3](https://github.com/AppSecHQ/arch/issues/3)
 

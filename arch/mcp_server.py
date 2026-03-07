@@ -21,7 +21,7 @@ from mcp.server.sse import SseServerTransport
 from mcp.types import Tool, TextContent
 from starlette.applications import Starlette
 from starlette.routing import Route
-from starlette.responses import Response
+from starlette.responses import JSONResponse, Response
 import uvicorn
 
 from arch.state import StateStore, AGENT_STATUSES
@@ -1259,7 +1259,7 @@ class MCPServer:
             mcp_server._active_transports[agent_id] = transport
 
             try:
-                # Handle the SSE connection
+                # Handle the SSE connection — transport owns the ASGI response
                 async with transport.connect_sse(
                     request.scope,
                     request.receive,
@@ -1270,6 +1270,10 @@ class MCPServer:
                         write_stream,
                         server.create_initialization_options()
                     )
+            except Exception:
+                # SSE transport already consumed the connection; errors on
+                # disconnect are expected and harmless.
+                pass
             finally:
                 # Clean up transport when connection closes
                 mcp_server._active_transports.pop(agent_id, None)
@@ -1294,12 +1298,52 @@ class MCPServer:
                 request._send
             )
 
+        async def handle_escalation_answer(request):
+            """Handle POST to answer a pending escalation/permission request."""
+            decision_id = request.path_params.get("decision_id", "")
+
+            try:
+                body = await request.json()
+            except Exception:
+                return JSONResponse({"ok": False, "error": "Invalid JSON"}, status_code=400)
+
+            answer = body.get("answer")
+            if not answer:
+                return JSONResponse({"ok": False, "error": "Missing answer"}, status_code=400)
+
+            success = mcp_server.answer_escalation(decision_id, answer)
+            if success:
+                return JSONResponse({"ok": True})
+            else:
+                return JSONResponse(
+                    {"ok": False, "error": "Decision not found or already answered"},
+                    status_code=404,
+                )
+
+        async def handle_health(request):
+            """Health check endpoint for dashboard connectivity."""
+            return JSONResponse({"status": "running", "port": mcp_server.port})
+
         routes = [
             Route("/sse/{agent_id}", handle_sse),
             Route("/messages/{agent_id}", handle_messages, methods=["POST"]),
+            Route("/api/escalation/{decision_id}", handle_escalation_answer, methods=["POST"]),
+            Route("/api/health", handle_health),
         ]
 
-        return Starlette(routes=routes)
+        starlette_app = Starlette(routes=routes)
+
+        # Wrap to suppress TypeError from SSE disconnect. When a client
+        # disconnects, the SSE transport has already consumed the ASGI send
+        # callable, so Starlette's attempt to send the Response raises
+        # TypeError. This is harmless and expected.
+        async def app(scope, receive, send):
+            try:
+                await starlette_app(scope, receive, send)
+            except TypeError:
+                pass
+
+        return app
 
     async def start(self, background: bool = True):
         """

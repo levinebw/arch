@@ -511,6 +511,10 @@ class StateStore:
 
         temp_path.replace(file_path)
 
+    def reload(self) -> None:
+        """Reload all state from JSON files. Used by standalone dashboard."""
+        self._load()
+
     def _load(self) -> None:
         """Load existing state from JSON files."""
         # Load each state file if it exists

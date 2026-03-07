@@ -948,10 +948,10 @@ class TestMCPServerCreate:
 
         assert "cached-agent" in mcp_server._mcp_servers
 
-    def test_create_app_returns_starlette(self, mcp_server):
-        """create_app returns a Starlette application."""
+    def test_create_app_returns_asgi(self, mcp_server):
+        """create_app returns a callable ASGI application."""
         app = mcp_server.create_app()
-        assert isinstance(app, Starlette)
+        assert callable(app)
 
 
 # --- Fixtures ---
@@ -1175,3 +1175,110 @@ class TestHandlePermissionRequest:
         result = await task
         assert result["approved"] is False
         assert "denied" in result["reason"]
+
+
+# ============================================================================
+# HTTP API Endpoint Tests
+# ============================================================================
+
+
+class TestHTTPEndpoints:
+    """Tests for the HTTP API endpoints (health, escalation)."""
+
+    @pytest.fixture
+    def mcp_server_with_app(self, tmp_path):
+        """Create an MCPServer and its Starlette app."""
+        state = StateStore(tmp_path / "state")
+        state.init_project("Test", "test", str(tmp_path))
+        server = MCPServer(state=state, port=3999)
+        app = server.create_app()
+        return server, app
+
+    def test_create_app_serves_api_routes(self, mcp_server_with_app):
+        """App serves escalation and health API routes."""
+        from starlette.testclient import TestClient
+
+        server, app = mcp_server_with_app
+        client = TestClient(app)
+        # Health endpoint is reachable
+        assert client.get("/api/health").status_code == 200
+        # Escalation endpoint is reachable (404 because no pending decision)
+        resp = client.post("/api/escalation/fake-id", json={"answer": "yes"})
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_health_endpoint(self, mcp_server_with_app):
+        """Health endpoint returns running status."""
+        from starlette.testclient import TestClient
+
+        server, app = mcp_server_with_app
+        client = TestClient(app)
+        response = client.get("/api/health")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "running"
+        assert data["port"] == 3999
+
+    @pytest.mark.asyncio
+    async def test_escalation_answer_success(self, mcp_server_with_app):
+        """Escalation answer endpoint succeeds for valid decision."""
+        from starlette.testclient import TestClient
+
+        server, app = mcp_server_with_app
+
+        # Create a pending decision and register the event
+        decision = server.state.add_pending_decision("Merge?", ["y", "n"])
+        decision_id = decision["id"]
+        event = asyncio.Event()
+        server._pending_escalations[decision_id] = event
+
+        client = TestClient(app)
+        response = client.post(
+            f"/api/escalation/{decision_id}",
+            json={"answer": "yes"},
+        )
+        assert response.status_code == 200
+        assert response.json()["ok"] is True
+
+    @pytest.mark.asyncio
+    async def test_escalation_answer_not_found(self, mcp_server_with_app):
+        """Escalation answer returns 404 for unknown decision."""
+        from starlette.testclient import TestClient
+
+        server, app = mcp_server_with_app
+
+        client = TestClient(app)
+        response = client.post(
+            "/api/escalation/nonexistent",
+            json={"answer": "yes"},
+        )
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_escalation_answer_missing_answer(self, mcp_server_with_app):
+        """Escalation answer returns 400 when answer is missing."""
+        from starlette.testclient import TestClient
+
+        server, app = mcp_server_with_app
+
+        client = TestClient(app)
+        response = client.post(
+            "/api/escalation/some-id",
+            json={},
+        )
+        assert response.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_escalation_answer_invalid_json(self, mcp_server_with_app):
+        """Escalation answer returns 400 for invalid JSON."""
+        from starlette.testclient import TestClient
+
+        server, app = mcp_server_with_app
+
+        client = TestClient(app)
+        response = client.post(
+            "/api/escalation/some-id",
+            content=b"not json",
+            headers={"Content-Type": "application/json"},
+        )
+        assert response.status_code == 400

@@ -436,7 +436,6 @@ class Orchestrator:
         self._archie_exit_handled = False
         self._project_complete = False
         self._github_enabled = False
-        self._dashboard: Optional[Any] = None
 
         # Agent instance tracking: role -> count of active instances
         self._agent_instance_counts: dict[str, int] = {}

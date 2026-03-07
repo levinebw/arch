@@ -3,89 +3,75 @@
 ## Current State
 
 **Steps Completed: 1-13 of 13** ✅
-**Tests: 459 passing** (440 unit/integration + 13 smoke + 6 E2E)
-**UAT Status:** UAT #3 failed — relative `state_dir` path broke MCP config. Fixed, awaiting UAT #4.
+**Tests: 494 passing** (2 failing — Docker not running, pre-existing)
+**Dashboard Refactor: COMPLETE** — Dashboard detached into separate process
 
-## Completed Components
+## Recent Changes: Dashboard Refactor
 
-| Step | File | Description | Tests |
-|------|------|-------------|-------|
-| 1 | `arch/state.py` | Thread-safe state store, JSON persistence, enum validation | 55 |
-| 2 | `arch/worktree.py` | Git worktree create/remove/merge, CLAUDE.md injection | 28 |
-| 3 | `arch/token_tracker.py` | Stream-json parsing, cost calculation, pricing.yaml | 32 |
-| 4 | `arch/mcp_server.py` | SSE/HTTP MCP server, access controls, all tools, stop() | 40 |
-| 5 | `arch/session.py` | Local claude subprocess, output parsing, resume | 34 |
-| 6 | `arch/container.py` | Docker spawn/stop, volume mounts, Dockerfile | 40 |
-| 7 | `arch/session.py` | Unified Session/Container interface, ContainerizedSession | 16 |
-| 8 | `arch/orchestrator.py` | Config parsing, gates, startup/shutdown, lifecycle wiring | 53 |
-| 9 | `arch/dashboard.py` | Textual TUI with agents/activity/costs panels, escalations | 43 |
-| 10 | `personas/*.md` | archie, frontend, backend, qa, security, copywriter personas | - |
-| 11 | `tests/test_mcp_server.py` | GitHub tools integration tests (mocked gh CLI) | 22 |
-| 11.5 | `arch/*.py` | Agent state persistence: context field, save_progress tool, CLAUDE.md injection | 16 |
-| 12 | `arch.py` | CLI entrypoint: up/down/status/init/send commands, PID file, GitHub label setup | 31 |
-| 13 | `tests/test_integration.py` | End-to-end integration tests with real git operations | 16 |
+The dashboard now runs as a **separate process** from the orchestrator, fixing the P0 shutdown hang from UAT #6.
 
-## Post-Build Fixes (Review Cycle)
+### Architecture Change
 
-### Issue #4: Agent permissions — FIXED (multiple rounds)
+**Before:** `archie up` ran both orchestrator and dashboard in-process via `asyncio.wait(FIRST_COMPLETED)`. Caused signal handler conflicts, terminal contention, and Textual cancellation hangs.
 
-UAT #1 revealed agents blocked on permission prompts (no TTY). Builder implemented three-layer permission system (`e633bf9`).
+**After:**
+- `archie up` — runs orchestrator only, logs to stdout. No TUI.
+- `archie dashboard` — standalone Textual TUI. Reads state from `state/` JSON files. Posts escalation answers via HTTP to MCP server.
 
-**Builder's implementation:**
-- `--permission-mode acceptEdits` + `--allowedTools` + `--permission-prompt-tool` flags in session.py/container.py
-- `handle_permission_request` MCP tool with blocking + `_runtime_allowed` dict
-- Dashboard `[y]once [a]lways [n]o` UI for permission requests
-- Config parsing for `permissions.allowed_tools` per role
+### Files Changed
 
-**Review fix #1 (`db2f061`):** 4 bugs found and fixed:
-1. MCP tools missing from `DEFAULT_ALLOWED_TOOLS_ALL` / `DEFAULT_ALLOWED_TOOLS_ARCHIE` — without them agents blocked on every MCP call
-2. Wrong Bash pattern syntax: `Bash(git:*)` → `Bash(git *)` per Claude CLI docs
-3. `--permission-prompt-tool` was commented out with incorrect race condition concern
-4. `handle_permission_request` in `WORKER_TOOLS` (agents could call directly) → moved to `SYSTEM_TOOLS`
+| File | Change |
+|------|--------|
+| `arch/mcp_server.py` | Added `/api/escalation/{decision_id}` POST and `/api/health` GET endpoints |
+| `arch/state.py` | Added `reload()` public method |
+| `arch/dashboard.py` | Refactored for standalone mode (`state_dir`/`mcp_port` params), HTTP escalation posting, `on_unmount` cleanup, try/except in refresh loop. Removed dead `run_dashboard`/`run_dashboard_async` functions. |
+| `arch.py` | Simplified `cmd_up` (no dashboard), added `cmd_dashboard`, fixed `usage.json` filename bug in `cmd_status` |
+| `arch/orchestrator.py` | Removed `_dashboard` attribute |
+| `KNOWN-ISSUES.md` | Marked detached dashboard done, `_refresh_task` fix done, `_refresh_loop` exception fix done, added auto-discovery enhancement |
 
-**Review fix #2 (uncommitted, ready to commit):** UAT #2 showed Archie still hangs (0 tokens, debug log ends at init). Cause: `SYSTEM_TOOLS` were excluded from `_get_tools_for_agent()` tool catalog. Claude CLI's `--permission-prompt-tool` references `mcp__arch__handle_permission_request` but can't discover it via MCP protocol. Fix: include `SYSTEM_TOOLS` in tool catalog returned by `_get_tools_for_agent()`.
+### New Tests (20 added)
 
-### CLI rename: `arch` → `archie` (`dc002fb`)
+- `TestHTTPEndpoints` (6 tests) — health endpoint, escalation answer success/not-found/missing/invalid
+- `TestDashboardStandaloneInit` (3 tests) — standalone init, budget, in-process mode
+- `TestDashboardStandaloneRefresh` (1 test) — reload from files
+- `TestDashboardStandaloneEscalation` (2 tests) — HTTP posting, connection error handling
+- `TestDashboardOnUnmount` (1 test) — refresh task cancellation
+- `TestDashboardOrchestratorConnection` (3 tests) — connection check no-port/unreachable/success
+- `TestCmdDashboard` (4 tests) — no config, creates state dir, reads config, main dispatch
 
-`/usr/bin/arch` is a macOS system binary. Renamed all CLI user-facing references to `archie`. Config file stays `arch.yaml`. No `pyproject.toml` yet — run as `python arch.py up`.
+## UAT Results
 
-### Path resolution issue — PARTIALLY FIXED
+### UAT #5: Todo App (Single Agent) — PASSED ✅
+- Commit: `c89fa2d`
+- Full lifecycle worked end-to-end
 
-`state_dir: "./state"` now resolved to absolute via `.resolve()` in orchestrator startup. This was the UAT #3 blocker: `--mcp-config state/archie-mcp.json` was relative, but claude's cwd is the worktree (`.worktrees/archie/`), so it couldn't find the config. `repo: "."` already called `.resolve()`. Still must run from the project directory (config-relative resolution not yet implemented).
+### UAT #6: Portfolio Site (Multi-Agent) — FUNCTIONAL PASS ✅
+- Commit: `26ba7bd` (UAT script)
+- Both frontend and qa agents worked in parallel, merged, QA tests pass
+- **Dashboard hang resolved by this refactor** — dashboard now runs independently
 
-### Test coverage gap — PARTIALLY ADDRESSED
+## Next Steps
 
-Added `tests/test_smoke.py` (13 tests) — starts a REAL MCP server (uvicorn) and connects REAL MCP clients via SSE. Tests cover:
-- Server lifecycle (start/bind/stop)
-- Tool discovery for worker vs Archie roles
-- SYSTEM_TOOLS visibility (the UAT #2 bug)
-- GitHub tools conditional on config
-- Tool dispatch (send_message, update_status)
-- Access control (worker denied Archie-only tools)
-- Multi-agent concurrent connections
-- Agent-to-agent messaging through real MCP
-- MCP config URL generation
-
-Added `tests/test_e2e.py` (6 tests) — full orchestrator lifecycle with real MCP server. Tests cover:
-- Full lifecycle: startup → spawn agent via MCP → messaging → completion → teardown → shutdown
-- Worktree + CLAUDE.md creation via MCP tool call
-- Access control enforced through real MCP + orchestrator callbacks
-- Multi-agent inter-agent messaging
-- Git merge triggered via MCP request_merge tool
-- Shutdown cleanup (worktrees removed, server stopped)
-
-Remaining gap: no test runs a real `claude` CLI process (requires API key). The smoke tests found a new bug: SSE handler TypeError on client disconnect (logged in KNOWN-ISSUES.md).
-
-## Open GitHub Issues
-
-| # | Title | Status |
-|---|-------|--------|
-| [#3](https://github.com/AppSecHQ/arch/issues/3) | Skills integration (v2) | Open — deferred |
-| [#4](https://github.com/AppSecHQ/arch/issues/4) | Agent permissions | Implemented, UAT in progress |
-
-Closed: [#1](https://github.com/AppSecHQ/arch/issues/1) (feedback), [#2](https://github.com/AppSecHQ/arch/issues/2) (auto-resume + arch send)
+1. **Re-run UAT #6** with the new `archie dashboard` pattern to verify clean shutdown
+2. **Worktree cleanup on exit** — `.worktrees/` dir not cleaned up (low priority)
 
 ## Key Architecture
+
+### Dashboard Separation
+
+```
+Terminal 1: archie up          → Orchestrator → MCP Server (port 3999)
+Terminal 2: archie dashboard   → Reads state/*.json, POSTs to /api/escalation
+```
+
+Dashboard modes:
+- **Standalone** (`state_dir` + `mcp_port`): reads from JSON files, POSTs escalations via HTTP
+- **In-process** (`state` + `token_tracker` objects): used by tests, backward-compatible
+
+### Orchestrator + Dashboard Communication
+- State: Both read/write `state/` directory JSON files (atomic writes via `.tmp`)
+- Escalations: Dashboard POSTs to `http://127.0.0.1:{mcp_port}/api/escalation/{decision_id}`
+- Health: Dashboard GETs `http://127.0.0.1:{mcp_port}/api/health` to show connection status
 
 ### Agent Lifecycle Flow
 ```
@@ -104,18 +90,9 @@ Archie calls spawn_agent via MCP
 2. `--allowedTools` — per-role whitelist from `DEFAULT_ALLOWED_TOOLS_ALL` / `_ARCHIE` + user config
 3. `--permission-prompt-tool mcp__arch__handle_permission_request` — runtime delegation to dashboard
 
-### Session Types
-- `Session` — local subprocess
-- `ContainerizedSession` — Docker container with stream parsing
-- `SessionManager.spawn()` auto-delegates based on `config.sandboxed`
-
-### Config file
+### Config
 - `arch.yaml` — system config
-- CLI command: `python arch.py` (alias `archie` once pyproject.toml is added)
-
-### UAT test project
-- Location: `~/claude-projects/arch-test-1` (Mortgage Calculator)
-- Run from project dir: `cd ~/claude-projects/arch-test-1 && source ~/claude-projects/arch/.venv/bin/activate && python ~/claude-projects/arch/arch.py up`
+- CLI: `python arch.py up` / `python arch.py dashboard`
 
 ## Running Tests
 
@@ -123,18 +100,3 @@ Archie calls spawn_agent via MCP
 source .venv/bin/activate
 GIT_CONFIG_GLOBAL=/dev/null python -m pytest tests/ -v
 ```
-
-## Files Modified This Session
-
-- `arch/orchestrator.py` — DEFAULT_ALLOWED_TOOLS constants with MCP tools, fixed Bash syntax, enabled permission_prompt_tool
-- `arch/mcp_server.py` — SYSTEM_TOOLS list, _get_tools_for_agent includes system tools, _check_tool_access allows system tools
-- `arch/session.py` — (builder) allowed_tools + permission_prompt_tool in AgentConfig and spawn()
-- `arch/container.py` — (builder) same permission flags for containerized sessions
-- `arch/dashboard.py` — (builder) permission request UI with y/a/n
-- `arch.py` — CLI rename arch → archie
-- `tests/test_mcp_server.py` — SYSTEM_TOOLS tests, tool catalog tests
-- `tests/test_session.py` — fixed Bash pattern syntax in tests
-- `tests/test_cli.py` — updated "archie up" reference
-- `tests/test_smoke.py` — NEW: 12 end-to-end smoke tests with real MCP server + SSE clients
-- `KNOWN-ISSUES.md` — documented all fixes + SSE disconnect bug found by smoke tests
-- `HANDOFF.md` — this file
