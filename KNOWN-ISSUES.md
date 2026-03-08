@@ -37,13 +37,13 @@ Each item notes which step introduced it and which step it must be fixed by.
 - [ ] **BRIEF.md regex fails on whitespace** — regex for updating Current Status section assumes exact formatting. Whitespace variations cause silent failures.
 - [ ] **GitHub CLI FileNotFoundError opaque** — when `gh` not installed, error message is generic `str(e)`. Add explicit handling with install instructions.
 - [ ] **Logging inconsistent** — `logger` imported but only used in a few places. Add logging for all error paths.
-- [ ] **SSE handler TypeError on client disconnect** — when an MCP client disconnects, `handle_sse()` in `create_app()` triggers `TypeError: 'NoneType' object is not callable` in Starlette routing. The SSE transport has already handled the response, but the function tries to return `Response()` after the connection is gone. Doesn't break functionality but logs noisy errors on every disconnect. Found by smoke tests.
+- [x] **SSE handler TypeError on client disconnect** — FIXED. Wrapped Starlette app in ASGI middleware that catches TypeError from SSE disconnect.
 
 ---
 
 ## Session Manager (Step 5)
 
-- [ ] **Unread stderr can deadlock** — `stderr=asyncio.subprocess.PIPE` is set but stderr is never consumed. If the subprocess writes enough to stderr, the pipe buffer fills and the process deadlocks. Either read stderr concurrently or use `asyncio.subprocess.DEVNULL`.
+- [x] **Unread stderr can deadlock** — FIXED. Added `_process_stderr()` async task that reads stderr line-by-line and surfaces as system messages in state store.
 - [ ] **Exit handling race** — `_process_output()` calls `_handle_exit()` after the read loop ends, but `stop()` can also cancel the output task and set `_running = False`. If both race, `_handle_exit` could fire twice. Add a guard at the top of `_handle_exit`.
 - [ ] **Dead sessions accumulate** — `_wrap_exit_callback` in SessionManager doesn't remove finished sessions from `_sessions` dict. Stale entries grow over long runs. Add cleanup or periodic pruning.
 
@@ -121,9 +121,17 @@ Each item notes which step introduced it and which step it must be fixed by.
 
 Implemented: `archie dashboard` runs as a standalone process, reads state from files, posts escalations via HTTP to MCP server's `/api/escalation/{decision_id}` endpoint. `archie up` runs orchestrator only.
 
-### Auto-Discovery of Agent Personas
+### ~~Auto-Discovery of Agent Personas~~ — DONE
 
-`arch init` should scan for persona files and auto-generate the `agent_pool` section in `arch.yaml`. Convention: `agents/*.md` files (e.g., `agents/lead-developer.md` → role `lead-developer`). Also support legacy patterns like `AGENT-*.md` at repo root. Reduces setup friction — projects with persona files work out of the box without manually writing config.
+Implemented: `list_personas` MCP tool scans `personas/`, `agents/`, and system persona directories. `plan_team` tool lets Archie propose a team dynamically — `agent_pool` in arch.yaml is now optional. Team plans escalate to user for approval (or auto-approve with `auto_approve_team: true`).
+
+### ~~MCP Event Logging~~ — DONE
+
+Implemented: Every MCP tool call logged to `state/events.jsonl` with timestamp, agent_id, tool name, arguments, result summary, and duration. Dashboard `e` key opens event history viewer.
+
+### ~~Dashboard Messaging~~ — DONE
+
+Implemented: Dashboard input bar is always enabled. When no escalation is pending, typing sends a message from user to Archie. Auto-resume picks up unread messages and restarts Archie's session.
 
 ### Skills Integration — [#3](https://github.com/AppSecHQ/arch/issues/3)
 
