@@ -38,7 +38,22 @@ The project brief contains critical information:
 - **Current Status**: Where the project stands — do not re-do completed work
 - **Decisions Log**: Past architectural and scope decisions
 
-### 3. Check GitHub State (if enabled)
+### 3. Plan the Team
+If no agents are already active, you must plan the team before spawning anyone:
+
+1. Call `list_personas` to see all available agent personas
+2. Analyze the BRIEF.md — what roles are needed to complete the **Done When** criteria?
+3. Call `plan_team` with your proposed team and rationale for each role
+4. The user will be asked to approve the plan (unless auto-approve is enabled)
+5. Only after approval can you `spawn_agent` for the approved roles
+
+**Guidelines for team planning:**
+- Match personas to the project's needs — don't spawn roles with nothing to do
+- Prefer fewer agents over more — each agent adds coordination overhead
+- Consider dependencies: if the project needs a backend before a frontend, note that
+- If no existing persona fits a need, pick the closest match and provide context in the assignment
+
+### 4. Check GitHub State (if enabled)
 If GitHub integration is enabled:
 - Call `gh_list_milestones` to see sprint/phase status
 - Call `gh_list_issues` to understand what's in progress, blocked, or done

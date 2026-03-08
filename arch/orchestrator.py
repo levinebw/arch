@@ -165,6 +165,7 @@ class SettingsConfig:
     mcp_port: int = DEFAULT_MCP_PORT
     token_budget_usd: Optional[float] = None
     auto_merge: bool = False
+    auto_approve_team: bool = False
     require_user_approval: list[str] = field(default_factory=list)
 
 
@@ -283,6 +284,7 @@ def parse_config(config_path: Path) -> ArchConfig:
         mcp_port=settings_raw.get("mcp_port", DEFAULT_MCP_PORT),
         token_budget_usd=settings_raw.get("token_budget_usd"),
         auto_merge=settings_raw.get("auto_merge", False),
+        auto_approve_team=settings_raw.get("auto_approve_team", False),
         require_user_approval=settings_raw.get("require_user_approval", []),
     )
 
@@ -784,6 +786,7 @@ class Orchestrator:
             on_teardown_agent=self._handle_teardown_agent,
             on_request_merge=self._handle_request_merge,
             on_close_project=self._handle_close_project,
+            on_plan_team=self._handle_plan_team,
         )
         await self.mcp_server.start()
         logger.info(f"MCP server listening on port {self.config.settings.mcp_port}")
@@ -820,6 +823,7 @@ class Orchestrator:
                 "send_message", "get_messages", "update_status", "save_progress", "report_completion",
                 "spawn_agent", "teardown_agent", "list_agents", "escalate_to_user",
                 "request_merge", "get_project_context", "close_project", "update_brief",
+                "list_personas", "plan_team",
             ] + (["gh_create_issue", "gh_list_issues", "gh_close_issue", "gh_update_issue",
                   "gh_add_comment", "gh_create_milestone", "gh_list_milestones"]
                  if self._github_enabled else []),
@@ -1209,6 +1213,73 @@ class Orchestrator:
         )
 
         return True
+
+    async def _handle_plan_team(
+        self,
+        agents: list[dict[str, str]],
+        summary: str
+    ) -> dict[str, Any]:
+        """
+        Handle plan_team request from Archie.
+
+        Validates the proposed team and either auto-approves or escalates
+        to the user. On approval, adds entries to the runtime agent_pool.
+        """
+        logger.info(f"Team plan received: {len(agents)} agents — {summary}")
+
+        # Format the plan for display
+        plan_lines = [f"Team Plan: {summary}", ""]
+        for a in agents:
+            plan_lines.append(f"  - {a['role']} ({a['persona']}): {a['rationale']}")
+
+        plan_text = "\n".join(plan_lines)
+
+        if not self.config.settings.auto_approve_team:
+            # Escalate to user for approval
+            if not self.mcp_server:
+                return {"error": "MCP server not available for escalation"}
+
+            question = (
+                f"Archie proposes the following team:\n\n{plan_text}\n\n"
+                f"Approve this team?"
+            )
+            answer = await self.mcp_server._escalate_and_wait(
+                question=question,
+                options=["Yes", "No"]
+            )
+
+            if answer.lower() not in ("yes", "y", "a"):
+                logger.info("Team plan rejected by user")
+                return {"approved": False, "reason": "User rejected the team plan"}
+
+        # Approved — add to runtime agent_pool
+        for a in agents:
+            role = a["role"]
+            persona = a["persona"]
+
+            # Check if already in pool
+            if self._get_pool_entry(role):
+                continue
+
+            self.config.agent_pool.append(AgentPoolEntry(
+                id=role,
+                persona=persona,
+                model=self.config.archie.model,  # Use same model as archie by default
+            ))
+            logger.info(f"Added {role} ({persona}) to agent pool")
+
+        # Log approval
+        self.state.add_message(
+            from_agent="system",
+            to_agent="archie",
+            content=f"Team plan approved. {len(agents)} roles available: "
+                    f"{', '.join(a['role'] for a in agents)}"
+        )
+
+        return {
+            "approved": True,
+            "roles": [a["role"] for a in agents],
+        }
 
     async def _handle_archie_exit(self) -> None:
         """Handle Archie session exit.

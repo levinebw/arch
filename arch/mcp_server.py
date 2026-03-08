@@ -168,13 +168,13 @@ SYSTEM_TOOLS = [
 ARCHIE_ONLY_TOOLS = [
     Tool(
         name="spawn_agent",
-        description="Spawn a new agent from the configured agent pool",
+        description="Spawn a new agent. Role must match an id from agent_pool (either configured in arch.yaml or added via plan_team).",
         inputSchema={
             "type": "object",
             "properties": {
                 "role": {
                     "type": "string",
-                    "description": "must match an id in agent_pool config"
+                    "description": "must match an id in agent_pool (from config or plan_team)"
                 },
                 "assignment": {
                     "type": "string",
@@ -290,6 +290,50 @@ ARCHIE_ONLY_TOOLS = [
                 }
             },
             "required": ["section", "content"]
+        }
+    ),
+    Tool(
+        name="list_personas",
+        description="List all available agent personas from the project and system persona directories. Returns name, description, and file path for each.",
+        inputSchema={
+            "type": "object",
+            "properties": {}
+        }
+    ),
+    Tool(
+        name="plan_team",
+        description="Propose an agent team for the project. Analyzes the brief and selects personas. Requires user approval unless auto_approve_team is set. Must be called before spawn_agent if no agent_pool is configured.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "agents": {
+                    "type": "array",
+                    "description": "List of agents to include in the team",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "role": {
+                                "type": "string",
+                                "description": "unique role id (e.g. 'frontend', 'qa', 'backend')"
+                            },
+                            "persona": {
+                                "type": "string",
+                                "description": "persona file path relative to project root (e.g. 'personas/frontend.md')"
+                            },
+                            "rationale": {
+                                "type": "string",
+                                "description": "why this role is needed for the project"
+                            }
+                        },
+                        "required": ["role", "persona", "rationale"]
+                    }
+                },
+                "summary": {
+                    "type": "string",
+                    "description": "brief summary of the team plan and how it maps to the project goals"
+                }
+            },
+            "required": ["agents", "summary"]
         }
     ),
 ]
@@ -420,6 +464,7 @@ class MCPServer:
         on_teardown_agent: Optional[Callable[[str], Awaitable[bool]]] = None,
         on_request_merge: Optional[Callable[..., Awaitable[dict[str, Any]]]] = None,
         on_close_project: Optional[Callable[[str], Awaitable[bool]]] = None,
+        on_plan_team: Optional[Callable[..., Awaitable[dict[str, Any]]]] = None,
     ):
         """
         Initialize the MCP server.
@@ -444,6 +489,7 @@ class MCPServer:
         self.on_teardown_agent = on_teardown_agent
         self.on_request_merge = on_request_merge
         self.on_close_project = on_close_project
+        self.on_plan_team = on_plan_team
 
         # Pending escalations: decision_id -> asyncio.Event
         self._pending_escalations: dict[str, asyncio.Event] = {}
@@ -639,6 +685,37 @@ class MCPServer:
             ]
         }
 
+    async def _escalate_and_wait(
+        self,
+        question: str,
+        options: Optional[list[str]] = None
+    ) -> str:
+        """
+        Create a pending decision and block until user answers.
+
+        Returns the user's answer string.
+        """
+        decision = self.state.add_pending_decision(question, options)
+        decision_id = decision["id"]
+
+        event = asyncio.Event()
+        self._pending_escalations[decision_id] = event
+
+        logger.info(f"Escalation {decision_id}: waiting for user answer")
+
+        await event.wait()
+
+        del self._pending_escalations[decision_id]
+
+        decisions = [
+            d for d in self.state._state["pending_user_decisions"]
+            if d["id"] == decision_id
+        ]
+
+        if decisions and decisions[0]["answer"]:
+            return decisions[0]["answer"]
+        return ""
+
     async def _handle_escalate_to_user(
         self,
         question: str,
@@ -649,32 +726,10 @@ class MCPServer:
 
         BLOCKS until user answers via the dashboard.
         """
-        # Create pending decision
-        decision = self.state.add_pending_decision(question, options)
-        decision_id = decision["id"]
-
-        # Create event for blocking
-        event = asyncio.Event()
-        self._pending_escalations[decision_id] = event
-
-        logger.info(f"Escalation {decision_id}: waiting for user answer")
-
-        # Block until answered
-        await event.wait()
-
-        # Clean up
-        del self._pending_escalations[decision_id]
-
-        # Get the answer
-        decisions = [
-            d for d in self.state._state["pending_user_decisions"]
-            if d["id"] == decision_id
-        ]
-
-        if decisions and decisions[0]["answer"]:
-            return {"answer": decisions[0]["answer"]}
-        else:
-            return {"answer": "", "error": "No answer received"}
+        answer = await self._escalate_and_wait(question, options)
+        if answer:
+            return {"answer": answer}
+        return {"answer": "", "error": "No answer received"}
 
     def answer_escalation(self, decision_id: str, answer: str) -> bool:
         """
@@ -923,6 +978,93 @@ class MCPServer:
         except Exception as e:
             logger.error(f"Failed to update BRIEF.md: {e}")
             return {"ok": False, "error": str(e)}
+
+    # --- Team Planning Tools ---
+
+    def _scan_persona_dirs(self) -> list[dict[str, str]]:
+        """Scan persona directories and return available personas."""
+        personas = []
+        seen_names = set()
+
+        # Directories to scan (project-local first, then system)
+        dirs_to_scan = []
+        if self.repo_path:
+            dirs_to_scan.append(self.repo_path / "personas")
+            dirs_to_scan.append(self.repo_path / "agents")
+
+        # System personas from ARCH install directory
+        arch_dir = Path(__file__).parent.parent / "personas"
+        dirs_to_scan.append(arch_dir)
+
+        for persona_dir in dirs_to_scan:
+            if not persona_dir.is_dir():
+                continue
+            for md_file in sorted(persona_dir.glob("*.md")):
+                name = md_file.stem
+                if name == "archie" or name in seen_names:
+                    continue
+                seen_names.add(name)
+
+                # Extract title and description from first lines
+                title = name
+                description = ""
+                try:
+                    with open(md_file) as f:
+                        for line in f:
+                            line = line.strip()
+                            if line.startswith("# "):
+                                title = line[2:].strip()
+                            elif line and not line.startswith("#"):
+                                description = line
+                                break
+                except Exception:
+                    pass
+
+                # Compute path relative to repo or absolute
+                if self.repo_path and md_file.is_relative_to(self.repo_path):
+                    rel_path = str(md_file.relative_to(self.repo_path))
+                else:
+                    rel_path = str(md_file)
+
+                personas.append({
+                    "name": name,
+                    "title": title,
+                    "description": description,
+                    "path": rel_path,
+                })
+
+        return personas
+
+    async def _handle_list_personas(self) -> dict[str, Any]:
+        """Handle list_personas tool (Archie only)."""
+        personas = self._scan_persona_dirs()
+        return {"personas": personas, "count": len(personas)}
+
+    async def _handle_plan_team(
+        self,
+        agents: list[dict[str, str]],
+        summary: str
+    ) -> dict[str, Any]:
+        """Handle plan_team tool (Archie only).
+
+        Validates the proposed team, then either auto-approves or
+        escalates to the user for approval.
+        """
+        if not self.on_plan_team:
+            return {"error": "plan_team callback not configured"}
+
+        # Validate personas exist
+        available = {p["name"]: p for p in self._scan_persona_dirs()}
+        for agent in agents:
+            persona_path = agent.get("persona", "")
+            persona_name = Path(persona_path).stem
+            if persona_name not in available:
+                return {
+                    "error": f"Unknown persona '{persona_path}'. "
+                             f"Available: {list(available.keys())}"
+                }
+
+        return await self.on_plan_team(agents, summary)
 
     # --- GitHub Tool Implementations ---
 
@@ -1262,6 +1404,10 @@ class MCPServer:
             result = await self._handle_close_project(**arguments)
         elif tool_name == "update_brief":
             result = await self._handle_update_brief(**arguments)
+        elif tool_name == "list_personas":
+            result = await self._handle_list_personas()
+        elif tool_name == "plan_team":
+            result = await self._handle_plan_team(**arguments)
 
         # GitHub tools
         elif tool_name == "gh_create_issue":

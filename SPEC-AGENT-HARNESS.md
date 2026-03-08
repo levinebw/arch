@@ -26,7 +26,6 @@ Hi, I'm Archie. Let's build something great.
 ✓ Archie is online.
 ```
 
-**Target implementer:** Claude Opus 4.5
 **Primary language:** Python 3.11+
 **Key dependencies:** `anthropic`, `mcp`, `textual`, `gitpython`, `pyyaml`, `asyncio`, `docker`
 

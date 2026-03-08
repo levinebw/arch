@@ -38,7 +38,8 @@ class TestToolDefinitions:
         tool_names = {t.name for t in ARCHIE_ONLY_TOOLS}
         expected = {
             "spawn_agent", "teardown_agent", "list_agents", "escalate_to_user",
-            "request_merge", "get_project_context", "close_project", "update_brief"
+            "request_merge", "get_project_context", "close_project", "update_brief",
+            "list_personas", "plan_team"
         }
         assert tool_names == expected
 
