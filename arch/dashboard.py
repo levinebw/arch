@@ -224,7 +224,7 @@ class EscalationPanel(Container):
 
     def compose(self) -> ComposeResult:
         yield Static("", id="escalation-question")
-        yield Input(placeholder="Type your answer...", id="escalation-input", disabled=True)
+        yield Input(placeholder="Send a message to Archie...", id="escalation-input")
 
     def watch_question(self, question: str) -> None:
         """Update the question display."""
@@ -243,13 +243,11 @@ class EscalationPanel(Container):
                 input_widget.placeholder = "Type your answer and press Enter..."
 
             q_widget.update(display)
-            input_widget.disabled = False
             input_widget.focus()
         else:
             q_widget.update("")
-            input_widget.disabled = True
             input_widget.value = ""
-            input_widget.placeholder = "Type your answer..."
+            input_widget.placeholder = "Send a message to Archie..."
 
 
 class HelpScreen(ModalScreen[None]):
@@ -272,6 +270,10 @@ class HelpScreen(ModalScreen[None]):
             Static("  m         View message bus log"),
             Static("  e         View MCP tool call events"),
             Static("  Escape    Close modals"),
+            Static(""),
+            Static("Input Bar:", classes="help-section"),
+            Static("  Type + Enter   Send message to Archie"),
+            Static("  (when escalation is pending, answers it instead)"),
             Static(""),
             Static("Press ? or Escape to close", classes="help-footer"),
             id="help-container",
@@ -723,50 +725,82 @@ class Dashboard(App):
             return False
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
-        """Handle escalation input submission."""
+        """Handle input submission — either answer escalation or send message to Archie."""
+        if not event.value:
+            return
+
         escalation_panel = self.query_one("#escalation-panel", EscalationPanel)
         decision_id = escalation_panel.decision_id
 
-        if decision_id and event.value:
-            answer = event.value
+        if decision_id:
+            # Answering a pending escalation
+            self._submit_escalation_answer(event, escalation_panel, decision_id)
+        else:
+            # Sending a message to Archie
+            self._submit_message_to_archie(event)
 
-            # For permission requests, expand short answers
-            if escalation_panel.is_permission_request:
-                answer_lower = answer.lower().strip()
-                if answer_lower in ("y", "yes"):
-                    answer = "yes (this time)"
-                elif answer_lower in ("a", "always"):
-                    answer = "always (this session)"
-                elif answer_lower in ("n", "no"):
-                    answer = "no"
+    def _submit_escalation_answer(
+        self, event: Input.Submitted, panel: EscalationPanel, decision_id: str
+    ) -> None:
+        """Submit an answer to a pending escalation."""
+        answer = event.value
 
-            # Answer the escalation
-            if self._standalone:
-                if not self._post_escalation_answer(decision_id, answer):
-                    activity_panel = self.query_one("#activity-panel", ActivityPanel)
-                    activity_panel.add_message({
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                        "from": "dashboard",
-                        "content": f"[stderr] Failed to send answer (orchestrator not connected)",
-                    })
-                    return
-            elif self.mcp_server:
-                self.mcp_server.answer_escalation(decision_id, answer)
+        # For permission requests, expand short answers
+        if panel.is_permission_request:
+            answer_lower = answer.lower().strip()
+            if answer_lower in ("y", "yes"):
+                answer = "yes (this time)"
+            elif answer_lower in ("a", "always"):
+                answer = "always (this session)"
+            elif answer_lower in ("n", "no"):
+                answer = "no"
 
-            # Clear the input and question
-            event.input.value = ""
-            escalation_panel.decision_id = None
-            escalation_panel.is_permission_request = False
-            escalation_panel.question = ""
-            escalation_panel.options = []
+        # Answer the escalation
+        if self._standalone:
+            if not self._post_escalation_answer(decision_id, answer):
+                activity_panel = self.query_one("#activity-panel", ActivityPanel)
+                activity_panel.add_message({
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "from": "dashboard",
+                    "content": "[stderr] Failed to send answer (orchestrator not connected)",
+                })
+                return
+        elif self.mcp_server:
+            self.mcp_server.answer_escalation(decision_id, answer)
 
-            # Log the response
-            activity_panel = self.query_one("#activity-panel", ActivityPanel)
-            activity_panel.add_message({
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "from": "user",
-                "content": f"Answered: {answer}",
-            })
+        # Clear the input and question
+        event.input.value = ""
+        panel.decision_id = None
+        panel.is_permission_request = False
+        panel.question = ""
+        panel.options = []
+
+        # Log the response
+        activity_panel = self.query_one("#activity-panel", ActivityPanel)
+        activity_panel.add_message({
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "from": "user",
+            "content": f"Answered: {answer}",
+        })
+
+    def _submit_message_to_archie(self, event: Input.Submitted) -> None:
+        """Send a user message to Archie via the state store."""
+        message = event.value
+        event.input.value = ""
+
+        self.state.add_message(
+            from_agent="user",
+            to_agent="archie",
+            content=message
+        )
+
+        # Log in activity panel
+        activity_panel = self.query_one("#activity-panel", ActivityPanel)
+        activity_panel.add_message({
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "from": "user",
+            "content": f"Message to Archie: {message}",
+        })
 
     def action_quit(self) -> None:
         """Handle quit action."""
