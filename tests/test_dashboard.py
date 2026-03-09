@@ -392,6 +392,235 @@ class TestEscalationPanel:
             )
 
 
+class TestEscalationButtons:
+    """Tests for escalation option buttons."""
+
+    @pytest.mark.asyncio
+    async def test_escalation_with_options_shows_buttons(
+        self, mock_state, mock_token_tracker
+    ):
+        """When Archie asks a question with options, buttons are rendered."""
+        mock_state.add_pending_decision(
+            "Should we deploy to production?",
+            ["Yes, deploy now", "No, wait for QA", "Let me check"]
+        )
+
+        app = Dashboard(state=mock_state, token_tracker=mock_token_tracker)
+
+        async with app.run_test() as pilot:
+            app._refresh_data()
+            await pilot.pause()
+
+            escalation_panel = app.query_one("#escalation-panel", EscalationPanel)
+            assert "Should we deploy to production?" in escalation_panel.question
+
+            # Buttons should be visible
+            from textual.widgets import Button
+            from textual.containers import Horizontal
+            options_bar = escalation_panel.query_one("#escalation-options", Horizontal)
+            buttons = options_bar.query(Button)
+            assert len(buttons) == 3
+            assert buttons[0].label.plain == "Yes, deploy now"
+            assert buttons[1].label.plain == "No, wait for QA"
+            assert buttons[2].label.plain == "Let me check"
+
+    @pytest.mark.asyncio
+    async def test_escalation_without_options_hides_buttons(
+        self, mock_state, mock_token_tracker
+    ):
+        """When Archie asks a question without options, no buttons are shown."""
+        mock_state.add_pending_decision("What should we name the project?")
+
+        app = Dashboard(state=mock_state, token_tracker=mock_token_tracker)
+
+        async with app.run_test() as pilot:
+            app._refresh_data()
+            await pilot.pause()
+
+            escalation_panel = app.query_one("#escalation-panel", EscalationPanel)
+            assert "What should we name the project?" in escalation_panel.question
+
+            from textual.containers import Horizontal
+            options_bar = escalation_panel.query_one("#escalation-options", Horizontal)
+            assert options_bar.display is False
+
+    @pytest.mark.asyncio
+    async def test_clicking_option_button_submits_answer(
+        self, mock_state, mock_token_tracker, mock_mcp_server
+    ):
+        """Clicking an option button submits that option as the answer."""
+        decision = mock_state.add_pending_decision(
+            "Approve team plan?",
+            ["Approve", "Reject", "Modify"]
+        )
+
+        app = Dashboard(
+            state=mock_state,
+            token_tracker=mock_token_tracker,
+            mcp_server=mock_mcp_server
+        )
+
+        async with app.run_test() as pilot:
+            app._refresh_data()
+            await pilot.pause()
+
+            # Click the first button ("Approve")
+            from textual.widgets import Button
+            escalation_panel = app.query_one("#escalation-panel", EscalationPanel)
+            buttons = escalation_panel.query(Button)
+            assert len(buttons) == 3
+
+            await pilot.click(Button, offset=(2, 0))
+            await pilot.pause()
+
+            # MCP server should be called with the button text
+            mock_mcp_server.answer_escalation.assert_called_once()
+            call_args = mock_mcp_server.answer_escalation.call_args
+            assert call_args[0][0] == decision["id"]
+            assert call_args[0][1] == "Approve"
+
+    @pytest.mark.asyncio
+    async def test_free_text_answer_still_works_with_options(
+        self, mock_state, mock_token_tracker, mock_mcp_server
+    ):
+        """User can type a custom answer even when options are shown."""
+        decision = mock_state.add_pending_decision(
+            "Approve team plan?",
+            ["Approve", "Reject"]
+        )
+
+        app = Dashboard(
+            state=mock_state,
+            token_tracker=mock_token_tracker,
+            mcp_server=mock_mcp_server
+        )
+
+        async with app.run_test() as pilot:
+            app._refresh_data()
+            await pilot.pause()
+
+            # Type a custom answer instead of clicking buttons
+            input_widget = app.query_one("#escalation-input", Input)
+            input_widget.value = "Approve but add a security agent too"
+            input_widget.post_message(Input.Submitted(input_widget, "Approve but add a security agent too"))
+            await pilot.pause()
+
+            mock_mcp_server.answer_escalation.assert_called_once_with(
+                decision["id"], "Approve but add a security agent too"
+            )
+
+    @pytest.mark.asyncio
+    async def test_permission_request_shows_permission_buttons(
+        self, mock_state, mock_token_tracker
+    ):
+        """Permission requests show y/a/n buttons."""
+        decision = mock_state.add_pending_decision(
+            "Allow Bash(git push)?",
+            options=None
+        )
+        # Simulate permission request type
+        for d in mock_state._state["pending_user_decisions"]:
+            if d["id"] == decision["id"]:
+                d["type"] = "permission_request"
+
+        app = Dashboard(state=mock_state, token_tracker=mock_token_tracker)
+
+        async with app.run_test() as pilot:
+            app._refresh_data()
+            await pilot.pause()
+
+            from textual.widgets import Button
+            escalation_panel = app.query_one("#escalation-panel", EscalationPanel)
+            buttons = escalation_panel.query(Button)
+            assert len(buttons) == 3
+            assert "Yes (once)" in buttons[0].label.plain
+            assert "Always" in buttons[1].label.plain
+            assert "No" in buttons[2].label.plain
+
+    @pytest.mark.asyncio
+    async def test_buttons_cleared_after_answer(
+        self, mock_state, mock_token_tracker, mock_mcp_server
+    ):
+        """After answering, buttons are cleared and panel resets."""
+        mock_state.add_pending_decision(
+            "Deploy?",
+            ["Yes", "No"]
+        )
+
+        app = Dashboard(
+            state=mock_state,
+            token_tracker=mock_token_tracker,
+            mcp_server=mock_mcp_server
+        )
+
+        async with app.run_test() as pilot:
+            app._refresh_data()
+            await pilot.pause()
+
+            # Answer via text
+            input_widget = app.query_one("#escalation-input", Input)
+            input_widget.value = "Yes"
+            input_widget.post_message(Input.Submitted(input_widget, "Yes"))
+            await pilot.pause()
+
+            # Panel should be reset
+            escalation_panel = app.query_one("#escalation-panel", EscalationPanel)
+            assert escalation_panel.question == ""
+            assert escalation_panel.decision_id is None
+
+            from textual.containers import Horizontal
+            options_bar = escalation_panel.query_one("#escalation-options", Horizontal)
+            assert options_bar.display is False
+
+    @pytest.mark.asyncio
+    async def test_team_plan_escalation_simulation(
+        self, mock_state, mock_token_tracker, mock_mcp_server
+    ):
+        """Simulate a full team plan approval flow as seen in production."""
+        # Archie proposes a team — this is what plan_team escalation looks like
+        decision = mock_state.add_pending_decision(
+            "Proposed team for CloudSync Landing Page:\n\n"
+            "1. frontend (personas/frontend.md) — Build landing page HTML/CSS\n"
+            "2. qa (personas/qa.md) — Write validation tests\n\n"
+            "Rationale: The project needs a landing page (frontend) and "
+            "validation tests (QA). No backend is needed.",
+            ["Approve team", "Reject team", "Modify team"]
+        )
+
+        app = Dashboard(
+            state=mock_state,
+            token_tracker=mock_token_tracker,
+            mcp_server=mock_mcp_server
+        )
+
+        async with app.run_test() as pilot:
+            app._refresh_data()
+            await pilot.pause()
+
+            # Verify the question and options are displayed
+            escalation_panel = app.query_one("#escalation-panel", EscalationPanel)
+            assert "Proposed team" in escalation_panel.question
+            assert "frontend" in escalation_panel.question
+
+            from textual.widgets import Button
+            buttons = escalation_panel.query(Button)
+            assert len(buttons) == 3
+            assert buttons[0].label.plain == "Approve team"
+
+            # User approves via button click
+            buttons[0].press()
+            await pilot.pause()
+
+            # Answer should be submitted
+            mock_mcp_server.answer_escalation.assert_called_once()
+            call_args = mock_mcp_server.answer_escalation.call_args
+            assert call_args[0][0] == decision["id"]
+            assert call_args[0][1] == "Approve team"
+
+            # Panel should be cleared
+            assert escalation_panel.question == ""
+
+
 class TestKeyboardShortcuts:
     """Tests for keyboard shortcuts."""
 

@@ -82,6 +82,8 @@ DEFAULT_ALLOWED_TOOLS_ARCHIE = [
     "mcp__arch__get_project_context",
     "mcp__arch__close_project",
     "mcp__arch__update_brief",
+    "mcp__arch__list_personas",
+    "mcp__arch__plan_team",
     "mcp__arch__gh_create_issue",
     "mcp__arch__gh_list_issues",
     "mcp__arch__gh_close_issue",

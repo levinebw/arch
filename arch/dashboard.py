@@ -235,9 +235,9 @@ class EscalationPanel(Container):
             if self.is_permission_request:
                 display = f"🔐 PERMISSION REQUEST:\n{question}"
                 input_widget.placeholder = "Type y, a, or n..."
-                options_bar.mount(Button("[y]es once", id="opt-y", variant="success"))
-                options_bar.mount(Button("[a]lways", id="opt-a", variant="warning"))
-                options_bar.mount(Button("[n]o", id="opt-n", variant="error"))
+                options_bar.mount(Button("Yes (once)", id="opt-y", variant="success"))
+                options_bar.mount(Button("Always", id="opt-a", variant="warning"))
+                options_bar.mount(Button("No", id="opt-n", variant="error"))
                 options_bar.display = True
             else:
                 display = f"⚠ ARCHIE ASKS: {question}"
@@ -705,8 +705,9 @@ class Dashboard(App):
             decision = decisions[0]  # Handle one at a time
             escalation_panel.decision_id = decision.get("id")
             escalation_panel.is_permission_request = decision.get("type") == "permission_request"
-            escalation_panel.question = decision.get("question", "")
+            # Set options BEFORE question — watch_question reads self.options
             escalation_panel.options = decision.get("options", [])
+            escalation_panel.question = decision.get("question", "")
         else:
             escalation_panel.decision_id = None
             escalation_panel.is_permission_request = False
