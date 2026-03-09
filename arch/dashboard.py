@@ -154,15 +154,9 @@ class ActivityPanel(Static):
         sender = message.get("from", "?")
         content = message.get("content", "")
 
-        # Truncate long content
-        if len(content) > 50:
-            content = content[:47] + "..."
-
         # Color messages by type
         if "[stderr]" in content:
             stderr_text = content.replace("[stderr] ", "")
-            if len(stderr_text) > 50:
-                stderr_text = stderr_text[:47] + "..."
             log.write(f"[dim]{ts} {sender:10} {stderr_text}[/dim]")
         elif "BLOCKED" in content.upper():
             log.write(f"[yellow]{ts} {sender:10} {content}[/yellow]")
@@ -282,6 +276,7 @@ class HelpScreen(ModalScreen[None]):
             Static("  l         View Archie's conversation log"),
             Static("  1-9       View agent conversation logs"),
             Static("  m         View message bus log"),
+            Static("  c         Toggle costs panel"),
             Static("  e         View MCP tool call events"),
             Static("  Escape    Close modals"),
             Static(""),
@@ -414,6 +409,7 @@ class Dashboard(App):
     #costs-panel {
         width: 20;
         height: 100%;
+        display: none;
         border: solid yellow;
         padding: 0 1;
     }
@@ -546,6 +542,7 @@ class Dashboard(App):
         Binding("?", "help", "Help"),
         Binding("l", "view_archie_log", "Archie Log"),
         Binding("m", "view_messages", "Messages"),
+        Binding("c", "toggle_costs", "Costs"),
         Binding("e", "view_events", "Events"),
         Binding("1", "view_agent_1", "Agent 1", show=False),
         Binding("2", "view_agent_2", "Agent 2", show=False),
@@ -862,6 +859,11 @@ class Dashboard(App):
         """View full message log."""
         messages = self.state.get_all_messages()
         self.push_screen(MessageLogScreen(messages, "All Messages"))
+
+    def action_toggle_costs(self) -> None:
+        """Toggle costs panel visibility."""
+        costs_panel = self.query_one("#costs-panel", CostsPanel)
+        costs_panel.display = not costs_panel.display
 
     def action_view_events(self) -> None:
         """View MCP tool call event history."""

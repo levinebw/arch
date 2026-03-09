@@ -912,6 +912,21 @@ class MCPServer:
             content=f"COMPLETE — {summary}"
         )
 
+        # Escalate to user for confirmation before shutting down
+        answer = await self._escalate_and_wait(
+            question=f"Archie wants to close the project:\n\n{summary}\n\nIs everything done?",
+            options=["Yes, shut down", "No, keep working"],
+        )
+
+        if answer and "no" in answer.lower() or "keep" in answer.lower():
+            # User wants to keep working — notify Archie
+            self.state.add_message(
+                from_agent="system",
+                to_agent="archie",
+                content=f"User declined project close: \"{answer}\". Continue working."
+            )
+            return {"ok": False, "reason": f"User declined: {answer}"}
+
         # Notify Archie to review the brief
         self.state.add_message(
             from_agent="system",

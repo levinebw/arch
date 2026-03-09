@@ -403,14 +403,27 @@ class TestArchieOnlyTools:
 
     @pytest.mark.asyncio
     async def test_close_project_calls_callback(self, mcp_server):
-        """close_project calls the configured callback."""
+        """close_project calls the configured callback after user confirms."""
         callback = AsyncMock(return_value=True)
         mcp_server.on_close_project = callback
+        mcp_server._escalate_and_wait = AsyncMock(return_value="Yes, shut down")
 
         result = await mcp_server._handle_close_project(summary="All done")
 
         callback.assert_called_once_with("All done")
         assert result["ok"] is True
+
+    @pytest.mark.asyncio
+    async def test_close_project_user_declines(self, mcp_server):
+        """close_project aborts when user declines."""
+        callback = AsyncMock(return_value=True)
+        mcp_server.on_close_project = callback
+        mcp_server._escalate_and_wait = AsyncMock(return_value="No, keep working")
+
+        result = await mcp_server._handle_close_project(summary="All done")
+
+        callback.assert_not_called()
+        assert result["ok"] is False
 
 
 class TestUpdateBrief:
