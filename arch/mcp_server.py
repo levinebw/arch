@@ -275,18 +275,18 @@ ARCHIE_ONLY_TOOLS = [
     ),
     Tool(
         name="update_brief",
-        description="Update a section of BRIEF.md. Use for Decisions Log entries and Current Status updates.",
+        description="Update a section of BRIEF.md. Call after each agent merge to check off completed items and update status. Sections: current_status (replace text), decisions_log (append row), done_when (check off item by substring match).",
         inputSchema={
             "type": "object",
             "properties": {
                 "section": {
                     "type": "string",
-                    "enum": ["current_status", "decisions_log"],
+                    "enum": ["current_status", "decisions_log", "done_when"],
                     "description": "which section to update"
                 },
                 "content": {
                     "type": "string",
-                    "description": "For current_status: full replacement text. For decisions_log: new row."
+                    "description": "For current_status: full replacement text. For decisions_log: new row. For done_when: substring of the checklist item to mark complete."
                 }
             },
             "required": ["section", "content"]
@@ -967,6 +967,22 @@ class MCPServer:
                 pattern = r"(## Current Status\n).*?(?=\n## |\Z)"
                 replacement = f"\\1{content}\n"
                 new_content = re.sub(pattern, replacement, brief_content, flags=re.DOTALL)
+
+            elif section == "done_when":
+                # Check off a Done When item by substring match
+                lines = brief_content.split("\n")
+                new_lines = []
+                matched = False
+                for line in lines:
+                    if not matched and "- [ ]" in line and content.lower() in line.lower():
+                        new_lines.append(line.replace("- [ ]", "- [x]", 1))
+                        matched = True
+                    else:
+                        new_lines.append(line)
+                new_content = "\n".join(new_lines)
+
+                if not matched:
+                    return {"ok": False, "error": f"No unchecked Done When item matching: {content}"}
 
             elif section == "decisions_log":
                 # Append to Decisions Log table

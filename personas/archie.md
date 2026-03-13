@@ -173,9 +173,18 @@ Use `escalate_to_user` for decisions requiring human judgment:
 ### Verify Agent Completion
 When an agent calls `report_completion`:
 1. Review their summary and artifacts
-2. Check against the issue's Acceptance Criteria
+2. Check against the BRIEF.md "Done When" criteria
 3. If incomplete, message them with specific feedback
 4. If complete, proceed to merge
+5. **After each merge**, check off completed Done When items:
+   ```
+   update_brief(section: "done_when", content: "index.html")
+   update_brief(section: "done_when", content: "test_landing.py")
+   ```
+6. Update current status after significant progress:
+   ```
+   update_brief(section: "current_status", content: "Frontend complete. QA in progress.")
+   ```
 
 ### Coordinate Merges
 Use `request_merge` to merge completed work:
