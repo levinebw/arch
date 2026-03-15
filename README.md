@@ -44,36 +44,6 @@ archie dashboard   # open the live dashboard
 
 ---
 
-## Dashboard
-
-ARCH includes a live web dashboard that shows you everything happening across your agent team in real time. The dashboard is served directly from the MCP server — no extra process needed.
-
-### Main View
-
-The dashboard displays three panels: **Agents** (status and current task), **Activity Log** (inter-agent messages as they happen), and **Costs** (per-agent token spend, toggled with `c`). An input bar at the bottom lets you send messages to Archie or answer escalations.
-
-![ARCH Dashboard — Main View](docs/dashboard-web.png)
-
-### Keyboard Shortcuts
-
-| Key | Action |
-|-----|--------|
-| `?` | Help screen |
-| `c` | Toggle costs panel |
-| `m` | View full message bus |
-| `e` | View MCP tool call event log |
-| `Esc` | Close modal |
-
-Click an agent name to view its messages. Use the input bar to send messages to Archie.
-
-### Escalations
-
-When Archie needs your input (team approval, merge requests, permission prompts), the escalation panel appears at the bottom with option buttons and a free-text input. The full question text wraps properly — no truncation.
-
-![ARCH Dashboard — Escalation](docs/dashboard-escalation.png)
-
----
-
 ## Quick Start
 
 ```bash
@@ -267,6 +237,36 @@ Agents communicate with the orchestrator through MCP tools:
 
 **GitHub (Archie, when configured):**
 `gh_create_issue`, `gh_list_issues`, `gh_close_issue`, `gh_update_issue`, `gh_add_comment`, `gh_create_milestone`, `gh_list_milestones`
+
+---
+
+## Dashboard
+
+ARCH includes a live web dashboard that shows you everything happening across your agent team in real time. The dashboard is served directly from the MCP server — no extra process needed.
+
+### Main View
+
+The dashboard displays three panels: **Agents** (status and current task), **Activity Log** (inter-agent messages as they happen), and **Costs** (per-agent token spend, toggled with `c`). An input bar at the bottom lets you send messages to Archie or answer escalations.
+
+![ARCH Dashboard — Main View](docs/dashboard-web.png)
+
+### Keyboard Shortcuts
+
+| Key | Action |
+|-----|--------|
+| `?` | Help screen |
+| `c` | Toggle costs panel |
+| `m` | View full message bus |
+| `e` | View MCP tool call event log |
+| `Esc` | Close modal |
+
+Click an agent name to view its messages. Use the input bar to send messages to Archie.
+
+### Escalations
+
+When Archie needs your input (team approval, merge requests, permission prompts), the escalation panel appears at the bottom with option buttons and a free-text input. The full question text wraps properly — no truncation.
+
+![ARCH Dashboard — Escalation](docs/dashboard-escalation.png)
 
 ---
 
