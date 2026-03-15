@@ -129,9 +129,14 @@ async def cmd_up(args: argparse.Namespace) -> int:
         print("Use 'archie status' to check the current state or 'archie down' to stop.")
         return 1
 
+    import yaml
+    with open(config_path) as f:
+        raw_config = yaml.safe_load(f)
+    mcp_port = raw_config.get("settings", {}).get("mcp_port", 3999)
+
     print_banner()
     print(f"Starting ARCH with config: {config_path}")
-    print(f"Run 'archie dashboard' in another terminal to open the TUI.")
+    print(f"Dashboard: http://localhost:{mcp_port}/dashboard")
     print()
 
     # Write PID file
@@ -228,9 +233,10 @@ def cmd_send(args: argparse.Namespace) -> int:
 
 
 def cmd_dashboard(args: argparse.Namespace) -> int:
-    """Launch standalone dashboard TUI."""
+    """Open the web dashboard in the default browser."""
+    import urllib.request
+    import webbrowser
     import yaml
-    from arch.dashboard import Dashboard
 
     config_path = Path(args.config)
     if not config_path.exists():
@@ -241,23 +247,19 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
     with open(config_path) as f:
         config = yaml.safe_load(f)
 
-    config_dir = config_path.resolve().parent
-    raw_state_dir = config.get("settings", {}).get("state_dir", "./state")
-    state_dir = (config_dir / raw_state_dir).resolve()
     mcp_port = config.get("settings", {}).get("mcp_port", 3999)
-    budget = config.get("settings", {}).get("token_budget_usd")
+    url = f"http://localhost:{mcp_port}/dashboard"
 
-    if not state_dir.exists():
-        print(f"Warning: State directory '{state_dir}' not found.")
-        print("Start ARCH first with 'archie up', or the dashboard will show empty state.")
-        state_dir.mkdir(parents=True, exist_ok=True)
+    # Check if ARCH is running
+    try:
+        urllib.request.urlopen(f"http://127.0.0.1:{mcp_port}/api/health", timeout=2)
+    except Exception:
+        print(f"Error: ARCH is not running on port {mcp_port}.")
+        print("Start ARCH first with 'archie up'.")
+        return 1
 
-    app = Dashboard(
-        state_dir=state_dir,
-        mcp_port=mcp_port,
-        budget=budget,
-    )
-    app.run()
+    print(f"Opening dashboard: {url}")
+    webbrowser.open(url)
     return 0
 
 
@@ -586,7 +588,7 @@ def main() -> int:
         epilog="""
 Commands:
   up         Start ARCH orchestrator (run in one terminal)
-  dashboard  Launch the monitoring TUI (run in another terminal)
+  dashboard  Open the web dashboard in your browser
   down       Gracefully shut down all agents
   status     Show current state of running session
   send       Send a message to Archie
@@ -638,7 +640,7 @@ Examples:
     )
 
     # archie dashboard
-    dash_parser = subparsers.add_parser("dashboard", help="Launch the monitoring TUI")
+    dash_parser = subparsers.add_parser("dashboard", help="Open the web dashboard")
     dash_parser.add_argument(
         "--config", "-c",
         default=DEFAULT_CONFIG,

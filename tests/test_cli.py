@@ -583,13 +583,11 @@ class TestCmdDashboard:
         captured = capsys.readouterr()
         assert "not found" in captured.out
 
-    def test_dashboard_creates_state_dir(self, tmp_path, capsys):
-        """dashboard creates state dir if missing."""
+    def test_dashboard_opens_browser_when_running(self, tmp_path, capsys):
+        """dashboard opens browser when ARCH is running."""
         config_path = tmp_path / "arch.yaml"
-        state_dir = tmp_path / "state"
         config_path.write_text(yaml.dump({
             "settings": {
-                "state_dir": str(state_dir),
                 "mcp_port": 3999,
             }
         }))
@@ -597,49 +595,42 @@ class TestCmdDashboard:
         args = MagicMock()
         args.config = str(config_path)
 
-        with patch("arch.dashboard.Dashboard.run") as mock_run:
-            result = cmd_dashboard(args)
+        with patch("urllib.request.urlopen"):  # Simulate healthy server
+            with patch("webbrowser.open") as mock_open:
+                result = cmd_dashboard(args)
 
         assert result == 0
-        assert state_dir.exists()
-        mock_run.assert_called_once()
+        mock_open.assert_called_once_with("http://localhost:3999/dashboard")
 
-    def test_dashboard_reads_config(self, tmp_path):
-        """dashboard reads mcp_port and budget from config."""
+    def test_dashboard_fails_when_not_running(self, tmp_path, capsys):
+        """dashboard fails when ARCH is not running."""
         config_path = tmp_path / "arch.yaml"
-        state_dir = tmp_path / "state"
-        state_dir.mkdir()
         config_path.write_text(yaml.dump({
             "settings": {
-                "state_dir": str(state_dir),
                 "mcp_port": 4000,
-                "token_budget_usd": 15.0,
             }
         }))
 
         args = MagicMock()
         args.config = str(config_path)
 
-        with patch("arch.dashboard.Dashboard.run") as mock_run:
-            with patch("arch.dashboard.Dashboard.__init__", return_value=None) as mock_init:
-                result = cmd_dashboard(args)
+        with patch("urllib.request.urlopen", side_effect=Exception("Connection refused")):
+            result = cmd_dashboard(args)
 
-        mock_init.assert_called_once()
-        call_kwargs = mock_init.call_args[1]
-        assert call_kwargs["mcp_port"] == 4000
-        assert call_kwargs["budget"] == 15.0
+        assert result == 1
+        captured = capsys.readouterr()
+        assert "not running" in captured.out
 
     def test_main_dashboard(self, tmp_path, capsys):
         """main dashboard command works."""
         config_path = tmp_path / "arch.yaml"
-        state_dir = tmp_path / "state"
-        state_dir.mkdir()
         config_path.write_text(yaml.dump({
-            "settings": {"state_dir": str(state_dir), "mcp_port": 3999}
+            "settings": {"mcp_port": 3999}
         }))
 
         with patch("sys.argv", ["archie", "dashboard", "--config", str(config_path)]):
-            with patch("arch.dashboard.Dashboard.run"):
-                result = main()
+            with patch("urllib.request.urlopen"):
+                with patch("webbrowser.open"):
+                    result = main()
 
         assert result == 0

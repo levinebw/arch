@@ -61,13 +61,31 @@ DEFAULT_ALLOWED_TOOLS_ALL = [
     "Bash(git log *)",
     "Bash(git branch *)",
     "Bash(git checkout *)",
-    # Dev tools — agents need to run tests, builds, and scripts
+    # Dev tools — agents need to run tests, builds, servers, and scripts
     "Bash(python *)",
     "Bash(python3 *)",
     "Bash(node *)",
     "Bash(npm *)",
     "Bash(npx *)",
     "Bash(pip *)",
+    "Bash(pip3 *)",
+    "Bash(yarn *)",
+    "Bash(pnpm *)",
+    "Bash(bun *)",
+    "Bash(deno *)",
+    "Bash(cargo *)",
+    "Bash(go *)",
+    "Bash(make *)",
+    "Bash(cmake *)",
+    "Bash(mvn *)",
+    "Bash(gradle *)",
+    "Bash(ruby *)",
+    "Bash(bundle *)",
+    "Bash(rails *)",
+    "Bash(docker *)",
+    "Bash(docker-compose *)",
+    "Bash(curl *)",
+    "Bash(wget *)",
     "Bash(cat *)",
     "Bash(ls *)",
     "Bash(mkdir *)",
@@ -80,6 +98,18 @@ DEFAULT_ALLOWED_TOOLS_ALL = [
     "Bash(grep *)",
     "Bash(sort *)",
     "Bash(cd *)",
+    "Bash(touch *)",
+    "Bash(chmod *)",
+    "Bash(echo *)",
+    "Bash(sed *)",
+    "Bash(awk *)",
+    "Bash(env *)",
+    "Bash(export *)",
+    "Bash(source *)",
+    "Bash(sh *)",
+    "Bash(bash *)",
+    "Bash(kill *)",
+    "Bash(lsof *)",
     # MCP tools available to all agents
     "mcp__arch__send_message",
     "mcp__arch__get_messages",
@@ -809,9 +839,18 @@ class Orchestrator:
             on_request_merge=self._handle_request_merge,
             on_close_project=self._handle_close_project,
             on_plan_team=self._handle_plan_team,
+            token_tracker=self.token_tracker,
         )
         await self.mcp_server.start()
         logger.info(f"MCP server listening on port {self.config.settings.mcp_port}")
+
+        # Wire token tracker to broadcast cost updates to web dashboard
+        existing_callback = self.token_tracker.on_usage_update
+        def _on_usage_update(agent_id, usage_dict):
+            if existing_callback:
+                existing_callback(agent_id, usage_dict)
+            self.mcp_server._broadcast_costs()
+        self.token_tracker.on_usage_update = _on_usage_update
 
     async def _create_archie_worktree(self) -> None:
         """Create Archie's worktree and write CLAUDE.md."""

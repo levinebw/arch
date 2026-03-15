@@ -26,6 +26,7 @@ from starlette.responses import JSONResponse, Response
 import uvicorn
 
 from arch.state import StateStore, AGENT_STATUSES
+from arch.web_dashboard import DashboardEventBroadcaster, get_dashboard_routes
 
 logger = logging.getLogger(__name__)
 
@@ -150,16 +151,18 @@ SYSTEM_TOOLS = [
                     "type": "string",
                     "description": "name of the tool requesting permission"
                 },
-                "tool_args": {
-                    "type": "string",
-                    "description": "summary of arguments being passed to the tool"
+                "input": {
+                    "type": "object",
+                    "description": "the tool input parameters",
+                    "additionalProperties": True
                 },
-                "reason": {
+                "tool_use_id": {
                     "type": "string",
-                    "description": "why you need to use this tool"
-                }
+                    "description": "unique identifier for the tool use request"
+                },
             },
-            "required": ["tool_name", "reason"]
+            "required": ["tool_name"],
+            "additionalProperties": True
         }
     ),
 ]
@@ -465,6 +468,7 @@ class MCPServer:
         on_request_merge: Optional[Callable[..., Awaitable[dict[str, Any]]]] = None,
         on_close_project: Optional[Callable[[str], Awaitable[bool]]] = None,
         on_plan_team: Optional[Callable[..., Awaitable[dict[str, Any]]]] = None,
+        token_tracker=None,
     ):
         """
         Initialize the MCP server.
@@ -478,6 +482,7 @@ class MCPServer:
             on_teardown_agent: Callback to teardown an agent.
             on_request_merge: Callback to handle merge requests.
             on_close_project: Callback to handle project close.
+            token_tracker: TokenTracker instance for cost data.
         """
         self.state = state
         self.port = port
@@ -490,6 +495,10 @@ class MCPServer:
         self.on_request_merge = on_request_merge
         self.on_close_project = on_close_project
         self.on_plan_team = on_plan_team
+        self.token_tracker = token_tracker
+
+        # Dashboard event broadcaster (web UI push updates)
+        self._dashboard_broadcaster = DashboardEventBroadcaster()
 
         # Pending escalations: decision_id -> asyncio.Event
         self._pending_escalations: dict[str, asyncio.Event] = {}
@@ -524,6 +533,20 @@ class MCPServer:
     def _is_archie(self, agent_id: str) -> bool:
         """Check if agent_id is Archie."""
         return agent_id == "archie"
+
+    def _broadcast_dashboard(self, event_type: str, data: dict) -> None:
+        """Push an event to all connected web dashboard clients."""
+        if self._dashboard_broadcaster.client_count > 0:
+            self._dashboard_broadcaster.broadcast(event_type, data)
+
+    def _broadcast_agents(self) -> None:
+        """Broadcast current agent list to dashboard."""
+        self._broadcast_dashboard("agents", {"agents": self.state.list_agents()})
+
+    def _broadcast_costs(self) -> None:
+        """Broadcast current cost data to dashboard."""
+        if self.token_tracker:
+            self._broadcast_dashboard("costs", self.token_tracker.get_all_usage())
 
     def _get_tools_for_agent(self, agent_id: str) -> list[Tool]:
         """Get the list of tools available to an agent.
@@ -560,6 +583,7 @@ class MCPServer:
     ) -> dict[str, Any]:
         """Handle send_message tool."""
         message = self.state.add_message(agent_id, to, content)
+        self._broadcast_dashboard("message", message)
         return {
             "message_id": message["id"],
             "timestamp": message["timestamp"]
@@ -585,6 +609,7 @@ class MCPServer:
     ) -> dict[str, Any]:
         """Handle update_status tool."""
         result = self.state.update_agent(agent_id, task=task, status=status)
+        self._broadcast_agents()
         return {"ok": result is not None}
 
     async def _handle_report_completion(
@@ -598,12 +623,14 @@ class MCPServer:
         self.state.update_agent(agent_id, status="done", task=summary)
 
         # Send completion message to Archie
-        self.state.add_message(
+        msg = self.state.add_message(
             agent_id,
             "archie",
             f"Work complete: {summary}\nArtifacts: {', '.join(artifacts)}"
         )
 
+        self._broadcast_agents()
+        self._broadcast_dashboard("message", msg)
         return {"ok": True}
 
     async def _handle_save_progress(
@@ -698,6 +725,8 @@ class MCPServer:
         decision = self.state.add_pending_decision(question, options)
         decision_id = decision["id"]
 
+        self._broadcast_dashboard("escalation", decision)
+
         event = asyncio.Event()
         self._pending_escalations[decision_id] = event
 
@@ -738,6 +767,7 @@ class MCPServer:
         Returns True if the escalation was found and answered.
         """
         if self.state.answer_decision(decision_id, answer):
+            self._broadcast_dashboard("escalation_cleared", {"id": decision_id})
             # Signal the waiting coroutine
             if decision_id in self._pending_escalations:
                 self._pending_escalations[decision_id].set()
@@ -769,28 +799,41 @@ class MCPServer:
         self,
         agent_id: str,
         tool_name: str,
-        tool_args: Optional[str] = None,
-        reason: str = ""
+        input: Optional[dict] = None,
+        tool_use_id: Optional[str] = None,
+        **kwargs,
     ) -> dict[str, Any]:
         """
         Handle permission request for a tool not in the pre-approved list.
 
+        Called by Claude CLI's --permission-prompt-tool mechanism.
+        Claude CLI sends: {tool_name, input, tool_use_id}
+        Claude CLI expects: {behavior: "allow"/"deny"}
+
         BLOCKS until user answers via the dashboard.
-        Returns:
-            - {"approved": True} if permission granted
-            - {"approved": False, "reason": "..."} if denied
         """
         # Check if already approved via "always"
         if self._check_runtime_allowed(agent_id, tool_name):
             logger.debug(f"Permission for {tool_name} auto-approved for {agent_id}")
-            return {"approved": True, "source": "runtime_allowlist"}
+            return {"behavior": "allow"}
 
         # Build the question for the user
-        question = f"Agent '{agent_id}' requests permission to use tool: {tool_name}"
-        if tool_args:
-            question += f"\nArguments: {tool_args}"
-        if reason:
-            question += f"\nReason: {reason}"
+        question = f"Agent '{agent_id}' requests permission to use: {tool_name}"
+        if input:
+            # Format tool input for display
+            if isinstance(input, dict):
+                # Show the most relevant field (e.g., 'command' for Bash)
+                if "command" in input:
+                    cmd = input["command"]
+                    if len(cmd) > 300:
+                        cmd = cmd[:300] + "..."
+                    question += f"\nCommand: {cmd}"
+                else:
+                    import json as _json
+                    args_str = _json.dumps(input, indent=2)
+                    if len(args_str) > 300:
+                        args_str = args_str[:300] + "..."
+                    question += f"\nArguments:\n{args_str}"
 
         # Options: [y]once, [a]lways, [n]o
         options = ["yes (this time)", "always (this session)", "no"]
@@ -800,10 +843,13 @@ class MCPServer:
         decision_id = decision["id"]
 
         # Tag the decision as a permission request for the dashboard
-        # (Store metadata in the decision for the dashboard to recognize)
         self.state._state["pending_user_decisions"][-1]["type"] = "permission_request"
         self.state._state["pending_user_decisions"][-1]["agent_id"] = agent_id
         self.state._state["pending_user_decisions"][-1]["tool_name"] = tool_name
+
+        # Broadcast with permission metadata
+        perm_decision = dict(self.state._state["pending_user_decisions"][-1])
+        self._broadcast_dashboard("escalation", perm_decision)
 
         # Create event for blocking
         event = asyncio.Event()
@@ -824,19 +870,19 @@ class MCPServer:
         ]
 
         if not decisions or not decisions[0].get("answer"):
-            return {"approved": False, "reason": "No answer received"}
+            return {"behavior": "deny"}
 
         answer = decisions[0]["answer"].lower()
 
         # Handle the response
         if answer.startswith("yes"):
-            return {"approved": True, "source": "user_once"}
+            return {"behavior": "allow"}
         elif answer.startswith("always"):
             # Add to runtime allowlist
             self.add_runtime_allowed(agent_id, tool_name)
-            return {"approved": True, "source": "user_always"}
+            return {"behavior": "allow"}
         else:
-            return {"approved": False, "reason": "User denied permission"}
+            return {"behavior": "deny"}
 
     async def _handle_request_merge(
         self,
@@ -1396,6 +1442,8 @@ class MCPServer:
         except Exception as e:
             logger.debug(f"Failed to write event log: {e}")
 
+        self._broadcast_dashboard("event_log", event)
+
     async def _handle_tool_call(
         self,
         agent_id: str,
@@ -1582,12 +1630,19 @@ class MCPServer:
             """Health check endpoint for dashboard connectivity."""
             return JSONResponse({"status": "running", "port": mcp_server.port})
 
+        dashboard_routes = get_dashboard_routes(
+            state=mcp_server.state,
+            token_tracker=mcp_server.token_tracker,
+            event_log_path=mcp_server._event_log_path,
+            broadcaster=mcp_server._dashboard_broadcaster,
+        )
+
         routes = [
             Route("/sse/{agent_id}", handle_sse),
             Route("/messages/{agent_id}", handle_messages, methods=["POST"]),
             Route("/api/escalation/{decision_id}", handle_escalation_answer, methods=["POST"]),
             Route("/api/health", handle_health),
-        ]
+        ] + dashboard_routes
 
         starlette_app = Starlette(routes=routes)
 

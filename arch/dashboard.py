@@ -1,12 +1,11 @@
 """
-ARCH Dashboard
+ARCH Dashboard (DEPRECATED)
 
-Textual TUI dashboard for monitoring and interacting with ARCH.
-Displays agent status, activity log, costs, and handles user escalations.
+This Textual TUI dashboard has been replaced by the web dashboard.
+Use 'archie dashboard' to open the web dashboard in your browser,
+or visit http://localhost:3999/dashboard when ARCH is running.
 
-Can run in two modes:
-- In-process: receives StateStore/TokenTracker/MCPServer objects directly (tests)
-- Standalone: reads from state directory files, posts escalations via HTTP (production)
+This module is retained for backward compatibility and testing.
 """
 
 from __future__ import annotations

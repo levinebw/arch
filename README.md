@@ -36,35 +36,31 @@ Archie (the Lead Agent) reads your project brief, analyzes the scope, and propos
 
 ## Dashboard
 
-ARCH includes a live terminal dashboard built with [Textual](https://textual.textualize.io/) that shows you everything happening across your agent team in real time.
+ARCH includes a live web dashboard that shows you everything happening across your agent team in real time. The dashboard is served directly from the MCP server — no extra process needed.
 
 ### Main View
 
-The main dashboard displays four panels: **Agents** (status and current task), **Activity Log** (inter-agent messages as they happen), **Costs** (per-agent token spend and budget), and an **Input Bar** for sending messages to Archie or answering escalations.
+The dashboard displays three panels: **Agents** (status and current task), **Activity Log** (inter-agent messages as they happen), and **Costs** (per-agent token spend, toggled with `c`). An input bar at the bottom lets you send messages to Archie or answer escalations.
 
-![ARCH Dashboard — Main View](docs/dashboard-main.png)
+![ARCH Dashboard — Main View](docs/dashboard-web.png)
 
 ### Keyboard Shortcuts
 
 | Key | Action |
 |-----|--------|
-| `q` | Quit |
 | `?` | Help screen |
-| `l` | View Archie's sent messages |
+| `c` | Toggle costs panel |
 | `m` | View full message bus |
-| `e` | View MCP tool call event history |
-| `1-9` | View individual agent messages |
-| Enter | Send message to Archie (or answer escalation) |
+| `e` | View MCP tool call event log |
+| `Esc` | Close modal |
 
-### Message Log
+Click an agent name to view its messages. Use the input bar to send messages to Archie.
 
-Press `m` to open the full message bus showing all inter-agent communication with timestamps and senders.
+### Escalations
 
-![ARCH Dashboard — Message Log](docs/dashboard-messages.png)
+When Archie needs your input (team approval, merge requests, permission prompts), the escalation panel appears at the bottom with option buttons and a free-text input. The full question text wraps properly — no truncation.
 
-### MCP Event Log
-
-Press `e` to see the full history of MCP tool calls — which agent called what, with arguments, result status, and duration. Useful for debugging and understanding agent behavior.
+![ARCH Dashboard — Escalation](docs/dashboard-escalation.png)
 
 ---
 
@@ -83,8 +79,9 @@ archie init --name "My Project"
 # Start the orchestrator
 archie up
 
-# In another terminal, open the dashboard
+# Open the dashboard in your browser
 archie dashboard
+# Or visit http://localhost:3999/dashboard directly
 ```
 
 ---
