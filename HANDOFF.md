@@ -130,7 +130,7 @@ GIT_CONFIG_GLOBAL=/dev/null python -m pytest tests/ -v
 ### Not Yet Implemented
 - **Context compaction** — full design in `COMPACTION-DESIGN.md`, 6 fixes outlined (monitoring, compact-and-restart cycle, dashboard indicators)
 - **Token budget enforcement** — `token_budget_usd` is parsed and displayed but never enforced at runtime
-- **UAT #8** — script written (`uat8.sh`) but not yet run
+- **UAT #8** — script written (`tests/uat8.sh`) but not yet run
 
 ### Known Bugs (see KNOWN-ISSUES.md for full list)
 - `atexit` handler prints "Emergency cleanup" 8 times during test suite

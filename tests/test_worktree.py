@@ -409,6 +409,77 @@ class TestWorktreeBranchStatus:
         assert status["ahead"] == 1
 
 
+class TestWorktreeAutoCommit:
+    """Tests for auto-committing uncommitted changes before teardown."""
+
+    def test_auto_commit_with_uncommitted_files(self, worktree_manager):
+        """auto_commit commits untracked and modified files."""
+        path = worktree_manager.create("autocommit-test")
+
+        # Create untracked files (simulating agent work that wasn't committed)
+        (path / "index.html").write_text("<h1>Hello</h1>")
+        (path / "style.css").write_text("body { margin: 0; }")
+
+        committed = worktree_manager.auto_commit("autocommit-test")
+        assert committed is True
+
+        # Verify files are committed
+        result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=path, capture_output=True, text=True
+        )
+        assert result.stdout.strip() == ""  # Clean after commit
+
+        # Verify the commit exists
+        log = subprocess.run(
+            ["git", "log", "--oneline", "-1"],
+            cwd=path, capture_output=True, text=True
+        )
+        assert "Auto-commit" in log.stdout
+
+    def test_auto_commit_clean_worktree(self, worktree_manager):
+        """auto_commit returns False for clean worktree."""
+        worktree_manager.create("clean-test")
+        committed = worktree_manager.auto_commit("clean-test")
+        assert committed is False
+
+    def test_auto_commit_nonexistent_worktree(self, worktree_manager):
+        """auto_commit returns False for nonexistent worktree."""
+        committed = worktree_manager.auto_commit("does-not-exist")
+        assert committed is False
+
+    def test_auto_commit_preserves_files_for_merge(self, worktree_manager):
+        """auto_commit + merge preserves all agent work on main."""
+        path = worktree_manager.create("preserve-test")
+
+        # Agent creates files but doesn't commit
+        (path / "app.js").write_text("console.log('hello');")
+        (path / "index.html").write_text("<h1>App</h1>")
+
+        # Auto-commit (what teardown should do)
+        worktree_manager.auto_commit("preserve-test")
+
+        # Merge to main (what teardown does after auto-commit)
+        worktree_manager.merge("preserve-test", "main")
+
+        # Verify files exist on main
+        repo_path = worktree_manager.repo_path
+        assert (repo_path / "app.js").exists()
+        assert (repo_path / "index.html").exists()
+        assert (repo_path / "app.js").read_text() == "console.log('hello');"
+
+    def test_auto_commit_with_staged_changes(self, worktree_manager):
+        """auto_commit handles already-staged files."""
+        path = worktree_manager.create("staged-test")
+
+        # Stage a file but don't commit
+        (path / "staged.txt").write_text("staged content")
+        subprocess.run(["git", "add", "staged.txt"], cwd=path, check=True, capture_output=True)
+
+        committed = worktree_manager.auto_commit("staged-test")
+        assert committed is True
+
+
 class TestWorktreeCleanup:
     """Tests for bulk cleanup."""
 

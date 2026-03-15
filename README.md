@@ -2,18 +2,28 @@
 
 > Meet **Archie** — your AI development team lead.
 
-ARCH is a multi-agent development system that orchestrates independent Claude AI sessions working concurrently on a software project. Each agent is a full Claude CLI process with its own role, memory, and isolated git worktree. A central harness connects them via a local MCP server, tracks token costs, and renders a live terminal dashboard.
+ARCH is a multi-agent development system that orchestrates independent Claude AI sessions working concurrently on a project. Each agent is a full Claude CLI process with its own role, memory, and isolated git worktree. A central harness connects them via a local MCP server, tracks token costs, and renders a live web dashboard.
 
 ---
 
 ## How It Works
 
-```
-archie up          # start the orchestrator (terminal 1)
-archie dashboard   # open the live dashboard (terminal 2)
-```
+Everything starts with two files in your project:
 
-Archie (the Lead Agent) reads your project brief, analyzes the scope, and proposes a team of specialist agents — frontend dev, QA engineer, security auditor, and more. You approve the team plan from the dashboard, and Archie spawns them to work in parallel across isolated git branches. You watch progress in real time, send messages to Archie, answer questions, and review results as work completes.
+- **`BRIEF.md`** — your project goals, constraints, and "Done When" criteria. This is what Archie reads to understand the work.
+- **`arch.yaml`** — project config: name, token budget, agent pool, settings. Run `archie init` to scaffold both.
+
+From there:
+
+1. `archie up` — starts the orchestrator. Archie reads the brief, scans available personas, and proposes a team of specialist agents.
+2. You approve the team plan from the dashboard (or set `auto_approve_team: true` to skip).
+3. Archie spawns the agents. They work in parallel across isolated git worktrees, coordinating via a shared MCP message bus.
+4. You supervise from the dashboard — watch progress, send messages to Archie, answer escalations, and review results as work completes.
+
+```
+archie up          # start the orchestrator
+archie dashboard   # open the live dashboard
+```
 
 ---
 
@@ -27,7 +37,7 @@ Archie (the Lead Agent) reads your project brief, analyzes the scope, and propos
 - **MCP event log** — every tool call logged with timing to `state/events.jsonl`, viewable in dashboard
 - **Sandboxed agents** — run agents in Docker containers for safety and isolation
 - **Permission control** — three-layer system: auto-approve common tools, whitelist via config, runtime approval via dashboard
-- **Live TUI dashboard** — agent status, activity log, costs, event history, and interactive messaging
+- **Live web dashboard** — agent status, activity log, costs, event history, and interactive messaging
 - **Always-on input** — send messages to Archie anytime from the dashboard or CLI
 - **Auto-merge safety** — unmerged agent work is auto-merged before worktree cleanup
 - **Configurable** — single `arch.yaml` defines your project, settings, and optional pre-configured agent pool
@@ -73,16 +83,50 @@ pip install -r requirements.txt
 # Scaffold config in your project
 archie init --name "My Project"
 
-# Write your project brief
-# Edit BRIEF.md with your project goals, constraints, and "Done When" criteria
-
-# Start the orchestrator
+# Edit BRIEF.md (see example below), then start
 archie up
 
 # Open the dashboard in your browser
 archie dashboard
 # Or visit http://localhost:3999/dashboard directly
 ```
+
+### Example BRIEF.md
+
+`archie init` generates a BRIEF.md template. Fill it in with your project goals and concrete "Done When" criteria — Archie uses these to plan the team and track progress:
+
+```markdown
+# Todo App
+
+## Goals
+
+Build a simple todo list web application.
+
+## Done When
+
+- [ ] Single HTML file (index.html) with embedded CSS and JS
+- [ ] User can add a new todo item via text input and "Add" button
+- [ ] User can mark a todo item as complete (checkbox or click)
+- [ ] User can delete a todo item
+- [ ] Completed items are visually distinct (strikethrough)
+- [ ] Looks clean and modern (centered layout, decent typography)
+
+## Constraints
+
+- Single HTML file, no frameworks, no build tools
+- Must work by opening the file directly in a browser
+
+## Current Status
+
+Not started.
+
+## Decisions Log
+
+| Date | Decision |
+|------|----------|
+```
+
+Archie updates **Current Status** and **Decisions Log** as work progresses, and checks off **Done When** items after each agent merge.
 
 ---
 
@@ -173,30 +217,33 @@ Place custom personas in your project's `personas/` or `agents/` directory. Arch
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                    archie up                             │
-│                                                         │
-│  ┌──────────┐   ┌────────────┐   ┌──────────────────┐  │
-│  │Orchestrator│──│ MCP Server │──│  State Store       │  │
-│  │          │   │ (SSE/HTTP) │   │  state/*.json      │  │
-│  │          │   │            │   │  events.jsonl      │  │
-│  └──────────┘   └────────────┘   └──────────────────┘  │
-│       │              │                    │              │
-│  ┌────┴────┐    ┌────┴────┐         ┌────┴────┐        │
-│  │ Archie  │    │Worker 1 │   ...   │Worker N │        │
-│  │(claude) │    │(claude) │         │(claude) │        │
-│  │worktree │    │worktree │         │worktree │        │
-│  └─────────┘    └─────────┘         └─────────┘        │
-└─────────────────────────────────────────────────────────┘
+![ARCH System Architecture](docs/arch-architecture.svg)
 
-┌─────────────────────────────────────────────────────────┐
-│                 archie dashboard                         │
-│                                                         │
-│  Reads state/*.json files, posts escalation answers     │
-│  via HTTP to /api/escalation/{id}                       │
-└─────────────────────────────────────────────────────────┘
+<details>
+<summary>Text version</summary>
+
 ```
+┌─────────────────────────────────────────────────────────────┐
+│                       archie up                              │
+│                                                              │
+│  ┌────────────┐   ┌──────────────┐   ┌──────────────────┐  │
+│  │Orchestrator │──│  MCP Server   │──│  State Store       │  │
+│  │ lifecycle   │   │  (SSE/HTTP)  │   │  state/*.json     │  │
+│  │ auto-resume │   │  port 3999   │   │  events.jsonl     │  │
+│  └────────────┘   └──────────────┘   └──────────────────┘  │
+│        │               │    │                                │
+│        │          ┌────┘    └──── /dashboard (Web UI)        │
+│   ┌────┴────┐    ┌┴────────┐         ┌──────────┐          │
+│   │ Archie  │    │Worker 1 │   ...   │ Worker N │          │
+│   │(claude) │    │(claude) │         │ (claude) │          │
+│   │worktree │    │worktree │         │ worktree │          │
+│   └─────────┘    └─────────┘         └──────────┘          │
+└─────────────────────────────────────────────────────────────┘
+
+Browser → localhost:3999/dashboard
+  Real-time SSE events, API endpoints for escalation answers
+```
+</details>
 
 ### Key Components
 
@@ -206,7 +253,7 @@ Place custom personas in your project's `personas/` or `agents/` directory. Arch
 - **Token Tracker** — parses Claude CLI stream-json output for per-agent cost tracking
 - **Session Manager** — manages claude CLI subprocesses (local or containerized)
 - **Worktree Manager** — git worktree creation, merge, PR creation, cleanup
-- **Dashboard** — Textual TUI running as a separate process, reads state files
+- **Web Dashboard** — browser-based UI served by the MCP server at `/dashboard` with SSE real-time updates
 
 ### MCP Tools
 
@@ -228,7 +275,7 @@ Agents communicate with the orchestrator through MCP tools:
 | Command | Description |
 |---------|-------------|
 | `archie up` | Start the orchestrator |
-| `archie dashboard` | Open the live TUI dashboard |
+| `archie dashboard` | Open the web dashboard in your browser |
 | `archie send "msg"` | Send a message to Archie |
 | `archie status` | Show project status and costs |
 | `archie down` | Stop a running orchestrator |

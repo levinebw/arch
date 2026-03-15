@@ -1,0 +1,167 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1060" height="830" viewBox="0 0 1060 830">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#333"/>
+    </marker>
+    <marker id="arr-p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#9c36b5"/>
+    </marker>
+    <marker id="arr-g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2f9e44"/>
+    </marker>
+    <marker id="arr-o" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#f08c00"/>
+    </marker>
+    <marker id="arr-b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#1971c2"/>
+    </marker>
+    <marker id="arr-gr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#868e96"/>
+    </marker>
+  </defs>
+
+  <rect width="1060" height="830" fill="#ffffff"/>
+
+  <!-- Title -->
+  <text x="530" y="32" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="24" font-weight="bold" fill="#1e1e1e">ARCH — System Architecture</text>
+
+  <!-- ═══ Background connection lines (drawn first, behind boxes) ═══ -->
+
+  <!-- MCP ··· Workers (faint SSE connections) -->
+  <line x1="425" y1="460" x2="150" y2="640" stroke="#2f9e44" stroke-width="1" stroke-dasharray="3,4" opacity="0.25"/>
+  <line x1="475" y1="460" x2="360" y2="640" stroke="#2f9e44" stroke-width="1" stroke-dasharray="3,4" opacity="0.25"/>
+  <line x1="540" y1="460" x2="570" y2="640" stroke="#2f9e44" stroke-width="1" stroke-dasharray="3,4" opacity="0.25"/>
+
+  <!-- archie send dashed arrow to State Store -->
+  <path d="M 330 82 Q 200 82 155 300" stroke="#868e96" stroke-width="1" stroke-dasharray="4,3" fill="none" opacity="0.6" marker-end="url(#arr-gr)"/>
+
+  <!-- ═══ BOXES ═══ -->
+
+  <!-- User box -->
+  <rect x="435" y="55" width="160" height="45" rx="8" fill="#e9ecef" stroke="#1e1e1e" stroke-width="2"/>
+  <text x="515" y="83" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="16" font-weight="600" fill="#1e1e1e">User</text>
+
+  <!-- archie send label -->
+  <text x="310" y="78" text-anchor="end" font-family="'SF Mono', Monaco, 'Courier New', monospace" font-size="11" fill="#868e96">archie send</text>
+
+  <!-- Web Dashboard box -->
+  <rect x="360" y="140" width="310" height="68" rx="8" fill="#d0ebff" stroke="#1971c2" stroke-width="2"/>
+  <text x="515" y="162" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="14" font-weight="600" fill="#1971c2">Web Dashboard (Browser)</text>
+  <text x="515" y="179" text-anchor="middle" font-family="'SF Mono', Monaco, 'Courier New', monospace" font-size="11" fill="#1971c2" opacity="0.85">localhost:3999/dashboard</text>
+  <text x="515" y="196" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="11" fill="#1971c2" opacity="0.85">Agents · Activity · Costs · Escalations</text>
+
+  <!-- Configuration box -->
+  <rect x="795" y="140" width="190" height="100" rx="8" fill="#e9ecef" stroke="#495057" stroke-width="2"/>
+  <text x="890" y="163" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="14" font-weight="600" fill="#495057">Configuration</text>
+  <line x1="805" y1="172" x2="975" y2="172" stroke="#495057" stroke-width="0.5" opacity="0.3"/>
+  <text x="808" y="190" font-family="'SF Mono', Monaco, 'Courier New', monospace" font-size="12" fill="#495057">arch.yaml</text>
+  <text x="808" y="207" font-family="'SF Mono', Monaco, 'Courier New', monospace" font-size="12" fill="#495057">BRIEF.md</text>
+  <text x="808" y="224" font-family="'SF Mono', Monaco, 'Courier New', monospace" font-size="12" fill="#495057">personas/*.md</text>
+
+  <!-- Orchestrator box -->
+  <rect x="340" y="270" width="350" height="68" rx="8" fill="#ffe3e3" stroke="#e03131" stroke-width="2"/>
+  <text x="515" y="293" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="14" font-weight="600" fill="#e03131">Orchestrator (archie up)</text>
+  <text x="515" y="311" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12" fill="#e03131" opacity="0.85">Lifecycle · Spawn · Teardown</text>
+  <text x="515" y="327" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12" fill="#e03131" opacity="0.85">Auto-resume · Auto-merge</text>
+
+  <!-- State Store box -->
+  <rect x="40" y="300" width="220" height="150" rx="8" fill="#fff3bf" stroke="#f08c00" stroke-width="2"/>
+  <text x="150" y="325" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="14" font-weight="600" fill="#f08c00">State Store</text>
+  <line x1="50" y1="333" x2="250" y2="333" stroke="#f08c00" stroke-width="0.5" opacity="0.3"/>
+  <text x="55" y="353" font-family="'SF Mono', Monaco, 'Courier New', monospace" font-size="11" fill="#f08c00">state/state.json</text>
+  <text x="70" y="370" font-family="'SF Mono', Monaco, 'Courier New', monospace" font-size="11" fill="#f08c00" opacity="0.7">agents, messages,</text>
+  <text x="70" y="387" font-family="'SF Mono', Monaco, 'Courier New', monospace" font-size="11" fill="#f08c00" opacity="0.7">decisions, project</text>
+  <text x="55" y="407" font-family="'SF Mono', Monaco, 'Courier New', monospace" font-size="11" fill="#f08c00">state/usage.json</text>
+  <text x="55" y="424" font-family="'SF Mono', Monaco, 'Courier New', monospace" font-size="11" fill="#f08c00">state/events.jsonl</text>
+
+  <!-- MCP Server box -->
+  <rect x="370" y="392" width="310" height="68" rx="8" fill="#d8f5a2" stroke="#2f9e44" stroke-width="2"/>
+  <text x="525" y="415" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="14" font-weight="600" fill="#2f9e44">MCP Server (SSE/HTTP)</text>
+  <text x="525" y="433" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12" fill="#2f9e44" opacity="0.85">Tools · Messages · Escalations</text>
+  <text x="525" y="449" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12" fill="#2f9e44" opacity="0.85">Event Log · Team Planning · /dashboard</text>
+
+  <!-- Token Tracker box -->
+  <rect x="795" y="280" width="190" height="68" rx="8" fill="#fff3bf" stroke="#f08c00" stroke-width="2"/>
+  <text x="890" y="305" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="14" font-weight="600" fill="#f08c00">Token Tracker</text>
+  <text x="890" y="322" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12" fill="#f08c00" opacity="0.85">assistant event → costs</text>
+  <text x="890" y="338" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12" fill="#f08c00" opacity="0.85">stream-json parsing</text>
+
+  <!-- Worktree Manager box -->
+  <rect x="795" y="392" width="190" height="80" rx="8" fill="#d0ebff" stroke="#1971c2" stroke-width="2"/>
+  <text x="890" y="416" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="14" font-weight="600" fill="#1971c2">Worktree Manager</text>
+  <line x1="805" y1="425" x2="975" y2="425" stroke="#1971c2" stroke-width="0.5" opacity="0.3"/>
+  <text x="808" y="443" font-family="'SF Mono', Monaco, 'Courier New', monospace" font-size="11" fill="#1971c2">.worktrees/archie/</text>
+  <text x="808" y="460" font-family="'SF Mono', Monaco, 'Courier New', monospace" font-size="11" fill="#1971c2">.worktrees/{agent}/</text>
+
+  <!-- Archie box -->
+  <rect x="400" y="515" width="250" height="65" rx="8" fill="#f3d9fa" stroke="#9c36b5" stroke-width="2"/>
+  <text x="525" y="538" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="14" font-weight="600" fill="#9c36b5">Archie (Lead Agent)</text>
+  <text x="525" y="555" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12" fill="#9c36b5" opacity="0.85">claude CLI</text>
+  <text x="525" y="571" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12" fill="#9c36b5" opacity="0.85">plan_team · spawn · merge</text>
+
+  <!-- Worker boxes -->
+  <rect x="60" y="640" width="170" height="55" rx="8" fill="#fff4e6" stroke="#e8590c" stroke-width="2"/>
+  <text x="145" y="663" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="13" font-weight="600" fill="#e8590c">Worker Agent</text>
+  <text x="145" y="681" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="11" fill="#e8590c" opacity="0.85">claude CLI (worktree)</text>
+
+  <rect x="275" y="640" width="170" height="55" rx="8" fill="#fff4e6" stroke="#e8590c" stroke-width="2"/>
+  <text x="360" y="663" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="13" font-weight="600" fill="#e8590c">Worker Agent</text>
+  <text x="360" y="681" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="11" fill="#e8590c" opacity="0.85">claude CLI (worktree)</text>
+
+  <rect x="490" y="640" width="170" height="55" rx="8" fill="#fff4e6" stroke="#e8590c" stroke-width="2"/>
+  <text x="575" y="663" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="13" font-weight="600" fill="#e8590c">Worker Agent</text>
+  <text x="575" y="681" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="11" fill="#e8590c" opacity="0.85">claude CLI (worktree)</text>
+
+  <text x="700" y="676" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="22" fill="#e8590c" opacity="0.5">...</text>
+
+  <!-- Git Repository bar -->
+  <rect x="40" y="745" width="710" height="40" rx="8" fill="#f8f9fa" stroke="#495057" stroke-width="1"/>
+  <text x="395" y="770" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="13" fill="#868e96">Git Repository — each agent works in its own worktree branch, auto-merged on teardown</text>
+
+  <!-- ═══ ARROWS ═══ -->
+
+  <!-- User ↔ Dashboard -->
+  <line x1="515" y1="100" x2="515" y2="140" stroke="#1e1e1e" stroke-width="2" marker-start="url(#arr)" marker-end="url(#arr)"/>
+
+  <!-- Dashboard ↔ MCP (right side, curved path showing SSE/API) -->
+  <path d="M 670 178 Q 735 178 735 300 Q 735 410 680 425" stroke="#2f9e44" stroke-width="2" fill="none" marker-start="url(#arr-g)" marker-end="url(#arr-g)"/>
+  <!-- SSE/API label -->
+  <text x="745" y="283" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="11" fill="#2f9e44">SSE events</text>
+  <text x="745" y="298" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="11" fill="#2f9e44">API endpoints</text>
+  <text x="745" y="318" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="10" fill="#2f9e44" font-style="italic">(dashboard served</text>
+  <text x="745" y="331" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="10" fill="#2f9e44" font-style="italic"> by MCP server)</text>
+
+  <!-- Config → Orchestrator -->
+  <line x1="795" y1="230" x2="690" y2="280" stroke="#495057" stroke-width="1" marker-end="url(#arr)"/>
+
+  <!-- Orchestrator ↔ MCP -->
+  <line x1="515" y1="338" x2="515" y2="392" stroke="#1e1e1e" stroke-width="2" marker-start="url(#arr)" marker-end="url(#arr)"/>
+
+  <!-- Orchestrator → Token Tracker -->
+  <line x1="690" y1="300" x2="795" y2="305" stroke="#f08c00" stroke-width="1" marker-end="url(#arr-o)"/>
+
+  <!-- Orchestrator → Worktree Manager -->
+  <line x1="690" y1="330" x2="795" y2="415" stroke="#1971c2" stroke-width="1" marker-end="url(#arr-b)"/>
+
+  <!-- MCP ↔ State Store -->
+  <line x1="370" y1="425" x2="260" y2="390" stroke="#f08c00" stroke-width="2" marker-start="url(#arr-o)" marker-end="url(#arr-o)"/>
+
+  <!-- MCP ↔ Archie -->
+  <line x1="525" y1="460" x2="525" y2="515" stroke="#2f9e44" stroke-width="2" marker-start="url(#arr-g)" marker-end="url(#arr-g)"/>
+  <text x="535" y="495" font-family="'SF Mono', Monaco, 'Courier New', monospace" font-size="11" fill="#868e96">/sse/archie</text>
+
+  <!-- Archie → Workers (spawn arrows) -->
+  <line x1="440" y1="580" x2="150" y2="640" stroke="#9c36b5" stroke-width="1" marker-end="url(#arr-p)"/>
+  <line x1="500" y1="580" x2="360" y2="640" stroke="#9c36b5" stroke-width="1" marker-end="url(#arr-p)"/>
+  <line x1="565" y1="580" x2="570" y2="640" stroke="#9c36b5" stroke-width="1" marker-end="url(#arr-p)"/>
+  <text x="290" y="615" font-family="'SF Mono', Monaco, 'Courier New', monospace" font-size="11" fill="#9c36b5">spawn_agent</text>
+
+  <!-- MCP SSE connections label -->
+  <text x="55" y="612" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="11" fill="#2f9e44" opacity="0.7">MCP SSE connections</text>
+  <text x="55" y="626" font-family="'SF Mono', Monaco, 'Courier New', monospace" font-size="11" fill="#2f9e44" opacity="0.6">/sse/{agent_id}</text>
+
+  <!-- Dynamic team annotation -->
+  <text x="55" y="520" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="11" fill="#9c36b5" opacity="0.7">Dynamic team: Archie calls</text>
+  <text x="55" y="534" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="11" fill="#9c36b5" opacity="0.7">list_personas → plan_team</text>
+  <text x="55" y="548" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="11" fill="#9c36b5" opacity="0.7">User approves via dashboard</text>
+</svg>

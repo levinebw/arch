@@ -280,22 +280,22 @@ project:
 
 archie:
   persona: "personas/archie.md"
-  model: "claude-sonnet-4-5"
+  model: "claude-opus-4-6"
 
 agent_pool:
   - id: frontend
     persona: "personas/frontend.md"
-    model: "claude-sonnet-4-5"
+    model: "claude-sonnet-4-6"
     max_instances: 1
 
   - id: backend
     persona: "personas/backend.md"
-    model: "claude-sonnet-4-5"
+    model: "claude-sonnet-4-6"
     max_instances: 1
 
   - id: qa
     persona: "personas/qa.md"
-    model: "claude-sonnet-4-5"
+    model: "claude-sonnet-4-6"
     max_instances: 1
 
 settings:
@@ -316,8 +316,38 @@ echo "Contents:"
 ls -la
 echo ""
 
-# 8. Activate venv and launch
+# 8. Add .gitignore
+cat > .gitignore << 'GI'
+state/
+.worktrees/
+__pycache__/
+GI
+
+# Re-commit with .gitignore
+git add .gitignore
+git commit --amend -m "Initial project setup for UAT #3"
+
+echo ""
 echo "=== Launching ARCH ==="
 echo ""
+echo "Dashboard opens automatically at http://localhost:3999/dashboard"
+echo ""
+echo "CHECKLIST:"
+echo "  [ ] Dashboard shows agents panel with Archie"
+echo "  [ ] Archie spawns frontend agent(s)"
+echo "  [ ] Activity log shows agent messages"
+echo "  [ ] Agent(s) build the mortgage calculator"
+echo "  [ ] Agent(s) report completion"
+echo "  [ ] Work gets merged to main"
+echo "  [ ] close_project confirmation in dashboard"
+echo ""
+echo "AFTER SHUTDOWN, VERIFY:"
+echo "  cd $UAT_DIR"
+echo "  git log --oneline"
+echo "  open index.html"
+echo ""
+echo "Press Enter to launch..."
+read
+
 source "$ARCH_DIR/.venv/bin/activate"
 python "$ARCH_DIR/arch.py" up

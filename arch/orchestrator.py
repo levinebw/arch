@@ -1190,19 +1190,55 @@ class Orchestrator:
                     logger.info(f"Stopped session for {agent_id}")
                 self.session_manager.remove_session(agent_id)
 
-            # Auto-merge unmerged work before removing worktree
+            # Auto-commit and merge unmerged work before removing worktree
             if self.worktree_manager and self.worktree_manager.exists(agent_id):
+                # Detect default branch
+                default_branch = "main"
+                try:
+                    head_result = subprocess.run(
+                        ["git", "symbolic-ref", "refs/remotes/origin/HEAD"],
+                        cwd=self.worktree_manager.repo_path,
+                        capture_output=True, text=True
+                    )
+                    if head_result.returncode == 0 and head_result.stdout.strip():
+                        default_branch = head_result.stdout.strip().split("/")[-1]
+                    else:
+                        # No remote — check if 'main' exists, fall back to current branch
+                        branch_check = subprocess.run(
+                            ["git", "branch", "--list", "main"],
+                            cwd=self.worktree_manager.repo_path,
+                            capture_output=True, text=True
+                        )
+                        if not branch_check.stdout.strip():
+                            cur = subprocess.run(
+                                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                                cwd=self.worktree_manager.repo_path,
+                                capture_output=True, text=True
+                            )
+                            if cur.returncode == 0 and cur.stdout.strip():
+                                default_branch = cur.stdout.strip()
+                except Exception:
+                    pass  # Fall back to "main"
+
+                # Auto-commit any uncommitted changes in the worktree
+                try:
+                    committed = self.worktree_manager.auto_commit(agent_id)
+                    if committed:
+                        logger.info(f"Auto-committed uncommitted work from {agent_id}")
+                except Exception as e:
+                    logger.warning(f"Auto-commit failed for {agent_id}: {e}")
+
+                # Check if branch has unmerged commits
                 try:
                     branch = f"agent/{agent_id}"
-                    # Check if branch has unmerged commits
                     result = subprocess.run(
-                        ["git", "log", "main.." + branch, "--oneline"],
+                        ["git", "log", f"{default_branch}..{branch}", "--oneline"],
                         cwd=self.worktree_manager.repo_path,
                         capture_output=True, text=True
                     )
                     if result.returncode == 0 and result.stdout.strip():
                         logger.info(f"Auto-merging unmerged work from {agent_id}")
-                        self.worktree_manager.merge(agent_id, "main")
+                        self.worktree_manager.merge(agent_id, default_branch)
                 except Exception as e:
                     logger.warning(f"Auto-merge failed for {agent_id}: {e}")
 

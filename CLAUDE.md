@@ -53,7 +53,7 @@ For a single test file: `python -m pytest tests/test_mcp_server.py -v`
 
 - **Bug fixes**: Check `KNOWN-ISSUES.md` for tracked issues with context.
 - **Enhancements**: The compaction system in `COMPACTION-DESIGN.md` is designed but not implemented.
-- **UATs**: `uat5.sh` through `uat8.sh` are acceptance test scripts. UATs 5-7 have passed.
+- **UATs**: `tests/uat5.sh` through `tests/uat8.sh` are acceptance test scripts. UATs 5-7 have passed.
 - **Tests**: Write tests for any new code. Run the full suite before committing.
 - **Spec reference**: When in doubt about intended behavior, check `SPEC-AGENT-HARNESS.md`.
 

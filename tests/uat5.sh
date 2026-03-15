@@ -144,12 +144,12 @@ project:
 
 archie:
   persona: "personas/archie.md"
-  model: "claude-sonnet-4-5"
+  model: "claude-opus-4-6"
 
 agent_pool:
   - id: frontend
     persona: "personas/frontend.md"
-    model: "claude-sonnet-4-5"
+    model: "claude-sonnet-4-6"
     max_instances: 1
 
 settings:
@@ -180,17 +180,17 @@ cat BRIEF.md
 echo ""
 echo "=== Launching ARCH ==="
 echo ""
-echo "CHECKLIST (watch for these as the dashboard runs):"
-echo "  [ ] Dashboard appears with ARCH title"
-echo "  [ ] Archie appears in agents panel (green dot)"
-echo "  [ ] Activity log shows Archie starting up"
+echo "Dashboard opens automatically at http://localhost:3999/dashboard"
+echo ""
+echo "CHECKLIST (watch for these in the web dashboard):"
+echo "  [ ] Dashboard shows agents panel with Archie"
 echo "  [ ] A frontend agent gets spawned (appears in agents panel)"
 echo "  [ ] Activity log shows messages between agents"
 echo "  [ ] Frontend agent status changes to 'working'"
 echo "  [ ] Frontend agent status changes to 'done'"
 echo "  [ ] Work gets merged to main (check git log after)"
-echo "  [ ] Agent gets torn down (disappears from panel)"
-echo "  [ ] Press q to quit — clean shutdown"
+echo "  [ ] Agent gets torn down"
+echo "  [ ] close_project confirmation in dashboard"
 echo ""
 echo "AFTER SHUTDOWN, VERIFY:"
 echo "  cd $UAT_DIR"

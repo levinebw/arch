@@ -285,6 +285,56 @@ class WorktreeManager:
         git_file = worktree_path / ".git"
         return git_file.exists()
 
+    def auto_commit(self, agent_id: str) -> bool:
+        """
+        Auto-commit any uncommitted changes in an agent's worktree.
+
+        Checks for staged/unstaged/untracked files and commits them all
+        so they aren't lost when the worktree is removed.
+
+        Returns:
+            True if changes were committed, False if worktree was clean.
+
+        Raises:
+            WorktreeError: If commit fails.
+        """
+        worktree_path = self._worktree_path(agent_id)
+        if not worktree_path.exists():
+            return False
+
+        try:
+            # Check for any changes (staged, unstaged, or untracked)
+            status = subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=worktree_path,
+                capture_output=True, text=True, check=True
+            )
+
+            if not status.stdout.strip():
+                return False  # Clean worktree
+
+            # Stage everything
+            subprocess.run(
+                ["git", "add", "-A"],
+                cwd=worktree_path,
+                check=True, capture_output=True, text=True
+            )
+
+            # Commit
+            subprocess.run(
+                ["git", "commit", "-m",
+                 f"Auto-commit uncommitted work from {agent_id} before teardown"],
+                cwd=worktree_path,
+                check=True, capture_output=True, text=True
+            )
+
+            return True
+
+        except subprocess.CalledProcessError as e:
+            raise WorktreeError(
+                f"Auto-commit failed for {agent_id}: {e.stderr}"
+            )
+
     def get_worktree_path(self, agent_id: str) -> Optional[Path]:
         """Get the worktree path for an agent, or None if it doesn't exist."""
         if self.exists(agent_id):

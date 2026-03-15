@@ -184,17 +184,17 @@ project:
 
 archie:
   persona: "personas/archie.md"
-  model: "claude-sonnet-4-5"
+  model: "claude-opus-4-6"
 
 agent_pool:
   - id: frontend
     persona: "personas/frontend.md"
-    model: "claude-sonnet-4-5"
+    model: "claude-sonnet-4-6"
     max_instances: 1
 
   - id: qa
     persona: "personas/qa.md"
-    model: "claude-sonnet-4-5"
+    model: "claude-sonnet-4-6"
     max_instances: 1
 
 settings:
@@ -226,19 +226,16 @@ cat BRIEF.md
 echo ""
 echo "=== Launching ARCH ==="
 echo ""
-echo "CHECKLIST:"
-echo "  1. In ANOTHER terminal, run: archie dashboard --config $UAT_DIR/arch.yaml"
-echo "  2. Watch for these in the dashboard:"
-echo "     [ ] Dashboard appears with ARCH title"
-echo "     [ ] Archie appears in agents panel (green dot)"
-echo "     [ ] TWO agents get spawned (frontend + qa in agents panel)"
-echo "     [ ] Both agents show 'working' status"
-echo "     [ ] Activity log shows messages from both agents"
-echo "     [ ] First agent finishes — gets merged and torn down"
-echo "     [ ] Second agent finishes — gets merged and torn down"
-echo "     [ ] Dashboard shows 'COMPLETE' in subtitle bar"
-echo "     [ ] Press q to quit dashboard"
-echo "  3. Orchestrator (this terminal) exits cleanly when done"
+echo "Dashboard opens automatically at http://localhost:3999/dashboard"
+echo ""
+echo "CHECKLIST (watch for these in the web dashboard):"
+echo "  [ ] Dashboard shows agents panel with Archie"
+echo "  [ ] TWO agents get spawned (frontend + qa in agents panel)"
+echo "  [ ] Both agents show 'working' status"
+echo "  [ ] Activity log shows messages from both agents"
+echo "  [ ] First agent finishes — gets merged and torn down"
+echo "  [ ] Second agent finishes — gets merged and torn down"
+echo "  [ ] close_project confirmation in dashboard"
 echo ""
 echo "AFTER SHUTDOWN, VERIFY:"
 echo "  cd $UAT_DIR"
