@@ -65,7 +65,7 @@ Each item notes which step introduced it and which step it must be fixed by.
 
 ## Orchestrator (Step 8)
 
-- [x] **CRITICAL: Agents block on permission approval** — FIXED ([#4](https://github.com/AppSecHQ/arch/issues/4)). Implemented three-layer permission system:
+- [x] **CRITICAL: Agents block on permission approval** — FIXED ([#4](https://github.com/levinebw/arch/issues/4)). Implemented three-layer permission system:
   1. `--permission-mode acceptEdits` — auto-approves Read, Edit, Write, Glob, Grep
   2. `--allowedTools` whitelist — `DEFAULT_ALLOWED_TOOLS_ALL` (includes all worker MCP tools + git patterns) and `DEFAULT_ALLOWED_TOOLS_ARCHIE` (includes all Archie MCP tools + `Bash(gh *)`), merged with user-configured `permissions.allowed_tools` from arch.yaml
   3. `--permission-prompt-tool mcp__arch__handle_permission_request` — delegates unapproved tool requests to dashboard (enabled, not commented out)
@@ -133,6 +133,6 @@ Implemented: Every MCP tool call logged to `state/events.jsonl` with timestamp, 
 
 Implemented: Dashboard input bar is always enabled. When no escalation is pending, typing sends a message from user to Archie. Auto-resume picks up unread messages and restarts Archie's session.
 
-### Skills Integration — [#3](https://github.com/AppSecHQ/arch/issues/3)
+### Skills Integration — [#3](https://github.com/levinebw/arch/issues/3)
 
 Add Claude Code Skills as a composable knowledge layer on top of personas. Personas define role identity ("who you are"); Skills define project conventions ("how we do things here"). Agents already inherit repo-level skills via worktrees — this enhancement adds role-specific skill mapping via `arch.yaml` and explicit injection at spawn time.

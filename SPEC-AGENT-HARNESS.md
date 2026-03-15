@@ -281,7 +281,7 @@ save_progress
   # Stored in StateStore agents.json under the agent's "context" field.
   # On agent resume/restart, the orchestrator injects this into the agent's
   # CLAUDE.md as a "## Session State" section so the new session has full continuity.
-  # See: https://github.com/AppSecHQ/arch/issues/1
+  # See: https://github.com/levinebw/arch/issues/1
 ```
 
 #### MCP Tools — Available to Archie ONLY
@@ -832,7 +832,7 @@ Build and verify each layer before building on it:
 9. **Dashboard** (`dashboard.py`) — Textual layout, live state binding, `[c]`/`[!]` indicators, user input for decisions
 10. **Persona files** — write default personas for: archie, frontend, backend, qa, security, copywriter
 11. **GitHub tools** — implement all `gh_*` MCP tools as `gh` CLI wrappers; test against a real repo; handle missing `gh` gracefully
-11.5. **Agent state persistence** — `context` field in StateStore, `save_progress` MCP tool, CLAUDE.md injection on resume/restart. See [#1](https://github.com/AppSecHQ/arch/issues/1).
+11.5. **Agent state persistence** — `context` field in StateStore, `save_progress` MCP tool, CLAUDE.md injection on resume/restart. See [#1](https://github.com/levinebw/arch/issues/1).
 12. **CLI entrypoint** (`arch.py`) — argument parsing, `init` scaffold command, `--github` flag for label/milestone setup, default Dockerfile
 13. **Integration test** — end-to-end run against a real git repo: Archie + 1 local agent + 1 sandboxed agent + GitHub Issues enabled. Should exercise agent state persistence (spawn → save_progress → teardown → verify context persisted).
 

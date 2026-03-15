@@ -347,7 +347,7 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 
 DEFAULT_ARCH_YAML = '''# ARCH Configuration
-# See: https://github.com/AppSecHQ/arch
+# See: https://github.com/levinebw/arch
 
 project:
   name: "{project_name}"

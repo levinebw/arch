@@ -60,7 +60,7 @@ For a single test file: `python -m pytest tests/test_mcp_server.py -v`
 ## Constraints
 
 - Python 3.11+
-- GitHub repo: https://github.com/AppSecHQ/arch
+- GitHub repo: https://github.com/levinebw/arch
 
 ## User Preferences
 
