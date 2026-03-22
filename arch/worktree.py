@@ -8,6 +8,7 @@ conflicts.
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Optional
@@ -198,6 +199,54 @@ class WorktreeManager:
         claude_md_path.write_text(header)
 
         return claude_md_path
+
+    def setup_agent_skills(
+        self,
+        agent_id: str,
+        skills_source_dir: Path,
+    ) -> list[str]:
+        """
+        Copy skills from a persona directory into the agent's worktree.
+
+        Skills are placed at .worktrees/{agent_id}/.claude/skills/ so that
+        Claude Code discovers them natively at session start.
+
+        Args:
+            agent_id: Agent identifier.
+            skills_source_dir: Path to the persona's skills/ directory
+                              (e.g., repo/personas/engineering/skills/).
+
+        Returns:
+            List of skill names that were copied.
+
+        Raises:
+            WorktreeError: If worktree doesn't exist.
+        """
+        worktree_path = self._worktree_path(agent_id)
+        if not worktree_path.exists():
+            raise WorktreeError(f"Worktree does not exist: {worktree_path}")
+
+        if not skills_source_dir.is_dir():
+            return []
+
+        target_skills_dir = worktree_path / ".claude" / "skills"
+        target_skills_dir.mkdir(parents=True, exist_ok=True)
+
+        copied_skills = []
+        for skill_dir in sorted(skills_source_dir.iterdir()):
+            if not skill_dir.is_dir():
+                continue
+            skill_md = skill_dir / "SKILL.md"
+            if not skill_md.exists():
+                continue
+
+            target = target_skills_dir / skill_dir.name
+            if target.exists():
+                shutil.rmtree(target)
+            shutil.copytree(skill_dir, target)
+            copied_skills.append(skill_dir.name)
+
+        return copied_skills
 
     def remove(self, agent_id: str, force: bool = True) -> bool:
         """

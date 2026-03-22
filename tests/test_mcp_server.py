@@ -16,6 +16,7 @@ from arch.mcp_server import (
     ARCHIE_ONLY_TOOLS,
     GITHUB_TOOLS,
     SYSTEM_TOOLS,
+    _parse_skill_frontmatter,
 )
 from arch.state import StateStore
 
@@ -39,7 +40,7 @@ class TestToolDefinitions:
         expected = {
             "spawn_agent", "teardown_agent", "list_agents", "escalate_to_user",
             "request_merge", "get_project_context", "close_project", "update_brief",
-            "list_personas", "plan_team"
+            "list_personas", "plan_team", "get_skill"
         }
         assert tool_names == expected
 
@@ -1342,3 +1343,195 @@ class TestHTTPEndpoints:
             headers={"Content-Type": "application/json"},
         )
         assert response.status_code == 400
+
+
+class TestParseSkillFrontmatter:
+    """Tests for SKILL.md frontmatter parsing."""
+
+    def test_parses_valid_frontmatter(self, tmp_path):
+        skill_md = tmp_path / "my-skill" / "SKILL.md"
+        skill_md.parent.mkdir()
+        skill_md.write_text("---\nname: my-skill\ndescription: Does things\n---\nBody.")
+
+        result = _parse_skill_frontmatter(skill_md)
+        assert result["name"] == "my-skill"
+        assert result["description"] == "Does things"
+
+    def test_falls_back_to_dir_name(self, tmp_path):
+        skill_md = tmp_path / "fallback-name" / "SKILL.md"
+        skill_md.parent.mkdir()
+        skill_md.write_text("No frontmatter here.")
+
+        result = _parse_skill_frontmatter(skill_md)
+        assert result["name"] == "fallback-name"
+        assert result["description"] == ""
+
+    def test_handles_missing_file(self, tmp_path):
+        skill_md = tmp_path / "missing" / "SKILL.md"
+        result = _parse_skill_frontmatter(skill_md)
+        assert result["name"] == "missing"
+
+    def test_handles_empty_frontmatter(self, tmp_path):
+        skill_md = tmp_path / "empty-fm" / "SKILL.md"
+        skill_md.parent.mkdir()
+        skill_md.write_text("---\n---\nBody.")
+
+        result = _parse_skill_frontmatter(skill_md)
+        assert result["name"] == "empty-fm"
+        assert result["description"] == ""
+
+
+class TestScanPersonaDirsWithSkills:
+    """Tests for persona scanning with directory and skills support."""
+
+    def test_finds_flat_personas_with_empty_skills(self, tmp_path):
+        repo = tmp_path / "repo"
+        personas = repo / "personas"
+        personas.mkdir(parents=True)
+        (personas / "frontend.md").write_text("# Frontend Dev\nBuilds UIs.")
+
+        state = StateStore(tmp_path / "state")
+        server = MCPServer(state=state, port=3999, repo_path=repo)
+        result = server._scan_persona_dirs()
+
+        frontend = [p for p in result if p["name"] == "frontend"]
+        assert len(frontend) == 1
+        assert frontend[0]["skills"] == []
+        assert frontend[0]["path"] == "personas/frontend.md"
+        assert frontend[0]["title"] == "Frontend Dev"
+
+    def test_finds_directory_personas(self, tmp_path):
+        repo = tmp_path / "repo"
+        eng_dir = repo / "personas" / "engineering"
+        eng_dir.mkdir(parents=True)
+        (eng_dir / "CLAUDE.md").write_text("# Engineering\nFull-stack engineer.")
+
+        state = StateStore(tmp_path / "state")
+        server = MCPServer(state=state, port=3999, repo_path=repo)
+        result = server._scan_persona_dirs()
+
+        eng = [p for p in result if p["name"] == "engineering"]
+        assert len(eng) == 1
+        assert eng[0]["title"] == "Engineering"
+        assert eng[0]["path"] == "personas/engineering"
+        assert eng[0]["skills"] == []
+
+    def test_directory_persona_with_skills(self, tmp_path):
+        repo = tmp_path / "repo"
+        eng_dir = repo / "personas" / "engineering"
+        eng_dir.mkdir(parents=True)
+        (eng_dir / "CLAUDE.md").write_text("# Engineering\nFull-stack engineer.")
+        skill_dir = eng_dir / "skills" / "build-api"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: build-api\ndescription: Build REST APIs\n---\nDetails."
+        )
+
+        state = StateStore(tmp_path / "state")
+        server = MCPServer(state=state, port=3999, repo_path=repo)
+        result = server._scan_persona_dirs()
+
+        eng = [p for p in result if p["name"] == "engineering"][0]
+        assert len(eng["skills"]) == 1
+        assert eng["skills"][0]["name"] == "build-api"
+        assert eng["skills"][0]["description"] == "Build REST APIs"
+
+    def test_directory_overrides_flat_file(self, tmp_path):
+        repo = tmp_path / "repo"
+        personas = repo / "personas"
+        personas.mkdir(parents=True)
+        (personas / "frontend.md").write_text("# Flat Frontend\nOld style.")
+        fe_dir = personas / "frontend"
+        fe_dir.mkdir()
+        (fe_dir / "CLAUDE.md").write_text("# Directory Frontend\nNew style.")
+
+        state = StateStore(tmp_path / "state")
+        server = MCPServer(state=state, port=3999, repo_path=repo)
+        result = server._scan_persona_dirs()
+
+        frontends = [p for p in result if p["name"] == "frontend"]
+        assert len(frontends) == 1
+        assert frontends[0]["title"] == "Directory Frontend"
+        assert frontends[0]["path"] == "personas/frontend"
+
+    def test_skips_directory_without_claude_md(self, tmp_path):
+        repo = tmp_path / "repo"
+        personas = repo / "personas"
+        (personas / "random-dir").mkdir(parents=True)
+        (personas / "random-dir" / "notes.txt").write_text("Just notes")
+
+        state = StateStore(tmp_path / "state")
+        server = MCPServer(state=state, port=3999, repo_path=repo)
+        result = server._scan_persona_dirs()
+
+        assert all(p["name"] != "random-dir" for p in result)
+
+    def test_multiple_skills_sorted(self, tmp_path):
+        repo = tmp_path / "repo"
+        eng_dir = repo / "personas" / "ops"
+        eng_dir.mkdir(parents=True)
+        (eng_dir / "CLAUDE.md").write_text("# Ops\nOperations.")
+        for skill_name in ["monitor", "deploy", "alert"]:
+            sd = eng_dir / "skills" / skill_name
+            sd.mkdir(parents=True)
+            (sd / "SKILL.md").write_text(f"---\nname: {skill_name}\ndescription: {skill_name} things\n---\n")
+
+        state = StateStore(tmp_path / "state")
+        server = MCPServer(state=state, port=3999, repo_path=repo)
+        result = server._scan_persona_dirs()
+
+        ops = [p for p in result if p["name"] == "ops"][0]
+        assert len(ops["skills"]) == 3
+        assert [s["name"] for s in ops["skills"]] == ["alert", "deploy", "monitor"]
+
+
+class TestGetSkill:
+    """Tests for the get_skill tool handler."""
+
+    @pytest.mark.asyncio
+    async def test_returns_skill_content(self, tmp_path):
+        repo = tmp_path / "repo"
+        skill_md = repo / "personas" / "engineering" / "skills" / "deploy" / "SKILL.md"
+        skill_md.parent.mkdir(parents=True)
+        skill_md.write_text("---\nname: deploy\n---\nDeploy process.")
+
+        state = StateStore(tmp_path / "state")
+        server = MCPServer(state=state, port=3999, repo_path=repo)
+        result = await server._handle_get_skill(persona="engineering", skill="deploy")
+
+        assert result["persona"] == "engineering"
+        assert result["skill"] == "deploy"
+        assert "Deploy process." in result["content"]
+
+    @pytest.mark.asyncio
+    async def test_accepts_full_persona_path(self, tmp_path):
+        repo = tmp_path / "repo"
+        skill_md = repo / "personas" / "engineering" / "skills" / "deploy" / "SKILL.md"
+        skill_md.parent.mkdir(parents=True)
+        skill_md.write_text("skill content")
+
+        state = StateStore(tmp_path / "state")
+        server = MCPServer(state=state, port=3999, repo_path=repo)
+        result = await server._handle_get_skill(persona="personas/engineering", skill="deploy")
+
+        assert result["persona"] == "engineering"
+        assert result["content"] == "skill content"
+
+    @pytest.mark.asyncio
+    async def test_returns_error_for_unknown_skill(self, tmp_path):
+        repo = tmp_path / "repo"
+        (repo / "personas" / "engineering").mkdir(parents=True)
+
+        state = StateStore(tmp_path / "state")
+        server = MCPServer(state=state, port=3999, repo_path=repo)
+        result = await server._handle_get_skill(persona="engineering", skill="nonexistent")
+
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_returns_error_without_repo(self, tmp_path):
+        state = StateStore(tmp_path / "state")
+        server = MCPServer(state=state, port=3999, repo_path=None)
+        result = await server._handle_get_skill(persona="engineering", skill="deploy")
+
+        assert result == {"error": "No repo path configured"}

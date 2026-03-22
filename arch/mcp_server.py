@@ -17,6 +17,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional, Awaitable
 
+import yaml
+
 from mcp.server import Server
 from mcp.server.sse import SseServerTransport
 from mcp.types import Tool, TextContent
@@ -29,6 +31,36 @@ from arch.state import StateStore, AGENT_STATUSES
 from arch.web_dashboard import DashboardEventBroadcaster, get_dashboard_routes
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_skill_frontmatter(skill_md_path: Path) -> dict[str, str]:
+    """Parse YAML frontmatter from a SKILL.md file.
+
+    Returns dict with 'name' and 'description' keys.
+    Falls back to directory name if frontmatter is missing or invalid.
+    """
+    fallback_name = skill_md_path.parent.name
+    try:
+        text = skill_md_path.read_text()
+    except Exception:
+        return {"name": fallback_name, "description": ""}
+
+    if not text.startswith("---"):
+        return {"name": fallback_name, "description": ""}
+
+    end = text.find("---", 3)
+    if end == -1:
+        return {"name": fallback_name, "description": ""}
+
+    try:
+        fm = yaml.safe_load(text[3:end].strip()) or {}
+    except yaml.YAMLError:
+        fm = {}
+
+    return {
+        "name": fm.get("name", fallback_name),
+        "description": str(fm.get("description", "")).strip(),
+    }
 
 
 # --- Tool Definitions ---
@@ -321,7 +353,7 @@ ARCHIE_ONLY_TOOLS = [
                             },
                             "persona": {
                                 "type": "string",
-                                "description": "persona file path relative to project root (e.g. 'personas/frontend.md')"
+                                "description": "persona path relative to project root (e.g. 'personas/frontend.md' or 'personas/engineering' for directory persona)"
                             },
                             "rationale": {
                                 "type": "string",
@@ -337,6 +369,24 @@ ARCHIE_ONLY_TOOLS = [
                 }
             },
             "required": ["agents", "summary"]
+        }
+    ),
+    Tool(
+        name="get_skill",
+        description="Read the full SKILL.md definition for a persona's skill, including process, inputs, outputs, and quality criteria. Use to understand capabilities for task routing and completion verification.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "persona": {
+                    "type": "string",
+                    "description": "persona name or path (e.g. 'engineering' or 'personas/engineering')"
+                },
+                "skill": {
+                    "type": "string",
+                    "description": "skill name (e.g. 'build-game-engine')"
+                }
+            },
+            "required": ["persona", "skill"]
         }
     ),
 ]
@@ -1063,8 +1113,33 @@ class MCPServer:
 
     # --- Team Planning Tools ---
 
-    def _scan_persona_dirs(self) -> list[dict[str, str]]:
-        """Scan persona directories and return available personas."""
+    @staticmethod
+    def _extract_title_description(md_path: Path) -> tuple[str, str]:
+        """Extract title and first description line from a markdown file."""
+        title = md_path.stem
+        description = ""
+        try:
+            with open(md_path) as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("# "):
+                        title = line[2:].strip()
+                    elif line and not line.startswith("#") and not line.startswith("---"):
+                        description = line
+                        break
+        except Exception:
+            pass
+        return title, description
+
+    def _scan_persona_dirs(self) -> list[dict[str, Any]]:
+        """Scan persona directories and return available personas.
+
+        Supports two formats:
+        - Flat file: personas/<name>.md
+        - Directory: personas/<name>/CLAUDE.md (with optional skills/<skill>/SKILL.md)
+
+        Directory personas take priority over flat files with the same name.
+        """
         personas = []
         seen_names = set()
 
@@ -1081,28 +1156,55 @@ class MCPServer:
         for persona_dir in dirs_to_scan:
             if not persona_dir.is_dir():
                 continue
+
+            # Pass 1: Directory personas (higher priority)
+            for entry in sorted(persona_dir.iterdir()):
+                if not entry.is_dir():
+                    continue
+                claude_md = entry / "CLAUDE.md"
+                if not claude_md.exists():
+                    continue
+                name = entry.name
+                if name == "archie" or name in seen_names:
+                    continue
+                seen_names.add(name)
+
+                title, description = self._extract_title_description(claude_md)
+
+                # Scan for skills
+                skills = []
+                skills_dir = entry / "skills"
+                if skills_dir.is_dir():
+                    for skill_entry in sorted(skills_dir.iterdir()):
+                        if not skill_entry.is_dir():
+                            continue
+                        skill_md = skill_entry / "SKILL.md"
+                        if skill_md.exists():
+                            skills.append(_parse_skill_frontmatter(skill_md))
+
+                # Path is the directory (not CLAUDE.md) for plan_team compatibility
+                if self.repo_path and entry.is_relative_to(self.repo_path):
+                    rel_path = str(entry.relative_to(self.repo_path))
+                else:
+                    rel_path = str(entry)
+
+                personas.append({
+                    "name": name,
+                    "title": title,
+                    "description": description,
+                    "path": rel_path,
+                    "skills": skills,
+                })
+
+            # Pass 2: Flat file personas (lower priority)
             for md_file in sorted(persona_dir.glob("*.md")):
                 name = md_file.stem
                 if name == "archie" or name in seen_names:
                     continue
                 seen_names.add(name)
 
-                # Extract title and description from first lines
-                title = name
-                description = ""
-                try:
-                    with open(md_file) as f:
-                        for line in f:
-                            line = line.strip()
-                            if line.startswith("# "):
-                                title = line[2:].strip()
-                            elif line and not line.startswith("#"):
-                                description = line
-                                break
-                except Exception:
-                    pass
+                title, description = self._extract_title_description(md_file)
 
-                # Compute path relative to repo or absolute
                 if self.repo_path and md_file.is_relative_to(self.repo_path):
                     rel_path = str(md_file.relative_to(self.repo_path))
                 else:
@@ -1113,6 +1215,7 @@ class MCPServer:
                     "title": title,
                     "description": description,
                     "path": rel_path,
+                    "skills": [],
                 })
 
         return personas
@@ -1121,6 +1224,37 @@ class MCPServer:
         """Handle list_personas tool (Archie only)."""
         personas = self._scan_persona_dirs()
         return {"personas": personas, "count": len(personas)}
+
+    async def _handle_get_skill(self, persona: str, skill: str) -> dict[str, Any]:
+        """Handle get_skill tool (Archie only). Reads full SKILL.md content."""
+        if not self.repo_path:
+            return {"error": "No repo path configured"}
+
+        # Resolve persona directory — accept "engineering", "personas/engineering",
+        # or "personas/engineering/CLAUDE.md"
+        if "/" not in persona:
+            persona_dir = self.repo_path / "personas" / persona
+        else:
+            persona_dir = self.repo_path / persona
+
+        # If it points to a file (e.g., CLAUDE.md or .md), use the parent directory
+        if persona_dir.is_file():
+            persona_dir = persona_dir.parent
+        elif persona_dir.suffix == ".md":
+            persona_dir = persona_dir.with_suffix("")
+
+        skill_md = persona_dir / "skills" / skill / "SKILL.md"
+        if not skill_md.exists():
+            return {"error": f"Skill '{skill}' not found for persona '{persona_dir.name}'"}
+
+        try:
+            return {
+                "persona": persona_dir.name,
+                "skill": skill,
+                "content": skill_md.read_text(),
+            }
+        except Exception as e:
+            return {"error": str(e)}
 
     async def _handle_plan_team(
         self,
@@ -1139,7 +1273,11 @@ class MCPServer:
         available = {p["name"]: p for p in self._scan_persona_dirs()}
         for agent in agents:
             persona_path = agent.get("persona", "")
-            persona_name = Path(persona_path).stem
+            # Handle both "personas/frontend.md" (stem=frontend) and
+            # "personas/engineering" (stem=engineering). Also handle
+            # "personas/engineering/CLAUDE.md" (stem=CLAUDE → use parent name).
+            p = Path(persona_path)
+            persona_name = p.parent.name if p.stem == "CLAUDE" else p.stem
             if persona_name not in available:
                 return {
                     "error": f"Unknown persona '{persona_path}'. "
@@ -1492,6 +1630,8 @@ class MCPServer:
             result = await self._handle_list_personas()
         elif tool_name == "plan_team":
             result = await self._handle_plan_team(**arguments)
+        elif tool_name == "get_skill":
+            result = await self._handle_get_skill(**arguments)
 
         # GitHub tools
         elif tool_name == "gh_create_issue":

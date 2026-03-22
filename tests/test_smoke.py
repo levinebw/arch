@@ -406,3 +406,121 @@ class TestMCPConfig:
 
             assert "host.docker.internal" in url
             assert "localhost" not in url
+
+
+class TestSkillsSmoke:
+    """Smoke tests for skills system via real MCP transport."""
+
+    @pytest.mark.asyncio
+    async def test_list_personas_includes_skills(self):
+        """list_personas returns skills for directory personas via real MCP."""
+        port = get_free_port()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo = Path(tmpdir) / "repo"
+            # Create a directory persona with a skill
+            eng_dir = repo / "personas" / "engineering"
+            skill_dir = eng_dir / "skills" / "deploy"
+            skill_dir.mkdir(parents=True)
+            (eng_dir / "CLAUDE.md").write_text("# Engineering\nBuilds things.")
+            (skill_dir / "SKILL.md").write_text(
+                "---\nname: deploy\ndescription: Deploy to production\n---\nSteps."
+            )
+            # Create a flat persona (no skills)
+            (repo / "personas" / "qa.md").write_text("# QA\nTests things.")
+
+            state = StateStore(Path(tmpdir) / "state")
+            server = MCPServer(state=state, port=port, repo_path=repo)
+
+            await server.start(background=True)
+            await asyncio.sleep(0.3)
+
+            try:
+                async with sse_client(f"http://127.0.0.1:{port}/sse/archie") as (r, w):
+                    async with ClientSession(r, w) as session:
+                        await session.initialize()
+
+                        result = await session.call_tool("list_personas", {})
+                        data = json.loads(result.content[0].text)
+
+                        personas = {p["name"]: p for p in data["personas"]}
+
+                        # Engineering has skills
+                        assert "engineering" in personas
+                        assert len(personas["engineering"]["skills"]) == 1
+                        assert personas["engineering"]["skills"][0]["name"] == "deploy"
+                        assert personas["engineering"]["skills"][0]["description"] == "Deploy to production"
+
+                        # QA has no skills
+                        assert "qa" in personas
+                        assert personas["qa"]["skills"] == []
+            finally:
+                await server.stop()
+
+    @pytest.mark.asyncio
+    async def test_get_skill_via_mcp(self):
+        """get_skill returns full SKILL.md content via real MCP transport."""
+        port = get_free_port()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo = Path(tmpdir) / "repo"
+            skill_dir = repo / "personas" / "engineering" / "skills" / "deploy"
+            skill_dir.mkdir(parents=True)
+            (repo / "personas" / "engineering" / "CLAUDE.md").write_text("# Eng\n")
+            (skill_dir / "SKILL.md").write_text(
+                "---\nname: deploy\ndescription: Deploy to prod\n---\n\n"
+                "## Process\n1. Run tests\n2. Push to prod\n\n"
+                "## Quality Criteria\n- No downtime\n"
+            )
+
+            state = StateStore(Path(tmpdir) / "state")
+            server = MCPServer(state=state, port=port, repo_path=repo)
+
+            await server.start(background=True)
+            await asyncio.sleep(0.3)
+
+            try:
+                async with sse_client(f"http://127.0.0.1:{port}/sse/archie") as (r, w):
+                    async with ClientSession(r, w) as session:
+                        await session.initialize()
+
+                        result = await session.call_tool("get_skill", {
+                            "persona": "engineering",
+                            "skill": "deploy",
+                        })
+                        data = json.loads(result.content[0].text)
+
+                        assert data["persona"] == "engineering"
+                        assert data["skill"] == "deploy"
+                        assert "## Process" in data["content"]
+                        assert "## Quality Criteria" in data["content"]
+                        assert "No downtime" in data["content"]
+            finally:
+                await server.stop()
+
+    @pytest.mark.asyncio
+    async def test_get_skill_access_denied_for_worker(self):
+        """Workers cannot call get_skill — it's Archie-only."""
+        port = get_free_port()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state = StateStore(Path(tmpdir) / "state")
+            server = MCPServer(state=state, port=port)
+
+            await server.start(background=True)
+            await asyncio.sleep(0.3)
+
+            try:
+                async with sse_client(f"http://127.0.0.1:{port}/sse/worker-1") as (r, w):
+                    async with ClientSession(r, w) as session:
+                        await session.initialize()
+
+                        result = await session.call_tool("get_skill", {
+                            "persona": "engineering",
+                            "skill": "deploy",
+                        })
+                        data = json.loads(result.content[0].text)
+                        assert "error" in data
+                        assert "Access denied" in data["error"]
+            finally:
+                await server.stop()

@@ -133,6 +133,7 @@ DEFAULT_ALLOWED_TOOLS_ARCHIE = [
     "mcp__arch__update_brief",
     "mcp__arch__list_personas",
     "mcp__arch__plan_team",
+    "mcp__arch__get_skill",
     "mcp__arch__gh_create_issue",
     "mcp__arch__gh_list_issues",
     "mcp__arch__gh_close_issue",
@@ -912,13 +913,8 @@ class Orchestrator:
         # Create worktree
         worktree_path = self.worktree_manager.create("archie")
 
-        # Read persona file
-        persona_path = self.repo_path / self.config.archie.persona
-        if persona_path.exists():
-            persona_content = persona_path.read_text()
-        else:
-            logger.warning(f"Archie persona not found at {persona_path}, using default")
-            persona_content = "# Archie - Lead Agent\n\nYou are Archie, the lead agent."
+        # Read persona file (supports flat file or directory with CLAUDE.md)
+        persona_content, skills_dir = self._resolve_persona(self.config.archie.persona)
 
         # Check for persisted session state (from previous run)
         session_state = None
@@ -942,12 +938,18 @@ class Orchestrator:
                 "send_message", "get_messages", "update_status", "save_progress", "report_completion",
                 "spawn_agent", "teardown_agent", "list_agents", "escalate_to_user",
                 "request_merge", "get_project_context", "close_project", "update_brief",
-                "list_personas", "plan_team",
+                "list_personas", "plan_team", "get_skill",
             ] + (["gh_create_issue", "gh_list_issues", "gh_close_issue", "gh_update_issue",
                   "gh_add_comment", "gh_create_milestone", "gh_list_milestones"]
                  if self._github_enabled else []),
             session_state=session_state,
         )
+
+        # Inject skills if directory persona has them
+        if skills_dir:
+            copied = self.worktree_manager.setup_agent_skills("archie", skills_dir)
+            if copied:
+                logger.info(f"Installed {len(copied)} skills for archie: {copied}")
 
         logger.info(f"Archie worktree created at {worktree_path}")
 
@@ -1058,6 +1060,44 @@ class Orchestrator:
     # Agent Lifecycle Handlers (called by MCP server)
     # =========================================================================
 
+    def _resolve_persona(self, persona_ref: str) -> tuple[str, Optional[Path]]:
+        """Resolve a persona reference to its content and optional skills directory.
+
+        Handles three formats:
+        - "personas/frontend.md" (flat file)
+        - "personas/engineering" (directory with CLAUDE.md)
+        - "personas/engineering/CLAUDE.md" (explicit file in directory)
+
+        Returns:
+            (persona_content, skills_dir_or_none)
+        """
+        candidate = self.repo_path / persona_ref
+
+        # Case 1: It's a directory -> look for CLAUDE.md inside
+        if candidate.is_dir():
+            claude_md = candidate / "CLAUDE.md"
+            if claude_md.exists():
+                content = claude_md.read_text()
+            else:
+                logger.warning(f"Directory persona missing CLAUDE.md: {candidate}")
+                content = f"# {candidate.name}\n\nYou are a {candidate.name} agent."
+            skills_dir = candidate / "skills"
+            return content, skills_dir if skills_dir.is_dir() else None
+
+        # Case 2: It's a file
+        if candidate.exists():
+            content = candidate.read_text()
+            # If it's CLAUDE.md inside a persona directory, check for sibling skills/
+            if candidate.name == "CLAUDE.md":
+                skills_dir = candidate.parent / "skills"
+                return content, skills_dir if skills_dir.is_dir() else None
+            return content, None
+
+        # Case 3: Not found
+        logger.warning(f"Persona not found at {candidate}, using default")
+        name = Path(persona_ref).stem
+        return f"# {name}\n\nYou are a {name} agent.", None
+
     def _get_pool_entry(self, role: str) -> Optional[AgentPoolEntry]:
         """Look up an agent pool entry by role ID."""
         for entry in self.config.agent_pool:
@@ -1118,13 +1158,8 @@ class Orchestrator:
             logger.info(f"Creating worktree for {agent_id}...")
             worktree_path = self.worktree_manager.create(agent_id)
 
-            # Read persona file
-            persona_path = self.repo_path / pool_entry.persona
-            if persona_path.exists():
-                persona_content = persona_path.read_text()
-            else:
-                logger.warning(f"Persona not found at {persona_path}, using default")
-                persona_content = f"# {role}\n\nYou are a {role} agent."
+            # Read persona file (supports flat file or directory with CLAUDE.md)
+            persona_content, skills_dir = self._resolve_persona(pool_entry.persona)
 
             # Build available tools list (worker tools only)
             available_tools = ["send_message", "get_messages", "update_status", "save_progress", "report_completion"]
@@ -1158,6 +1193,12 @@ class Orchestrator:
                 available_tools=available_tools,
                 session_state=session_state,
             )
+
+            # Inject skills if directory persona has them
+            if skills_dir:
+                copied = self.worktree_manager.setup_agent_skills(agent_id, skills_dir)
+                if copied:
+                    logger.info(f"Installed {len(copied)} skills for {agent_id}: {copied}")
 
             # Register agent in state
             self.state.register_agent(

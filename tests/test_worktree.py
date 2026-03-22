@@ -544,3 +544,85 @@ def git_repo(tmp_path):
 def worktree_manager(git_repo):
     """Create a WorktreeManager for the test repo."""
     return WorktreeManager(git_repo)
+
+
+class TestSetupAgentSkills:
+    """Tests for skill injection into agent worktrees."""
+
+    def test_copies_skill_directories(self, worktree_manager):
+        """setup_agent_skills copies skill directories into .claude/skills/."""
+        worktree_manager.create("eng-1")
+
+        skills_src = worktree_manager.repo_path / "test-skills"
+        skill1 = skills_src / "build-engine"
+        skill1.mkdir(parents=True)
+        (skill1 / "SKILL.md").write_text("---\nname: build-engine\n---\nBuild it.")
+        (skill1 / "template.md").write_text("Template content")
+
+        result = worktree_manager.setup_agent_skills("eng-1", skills_src)
+
+        assert result == ["build-engine"]
+        target = worktree_manager._worktree_path("eng-1") / ".claude" / "skills" / "build-engine"
+        assert target.exists()
+        assert (target / "SKILL.md").read_text() == "---\nname: build-engine\n---\nBuild it."
+        assert (target / "template.md").read_text() == "Template content"
+
+    def test_skips_dirs_without_skill_md(self, worktree_manager):
+        """setup_agent_skills skips directories that don't contain SKILL.md."""
+        worktree_manager.create("eng-1")
+
+        skills_src = worktree_manager.repo_path / "test-skills"
+        (skills_src / "not-a-skill").mkdir(parents=True)
+        (skills_src / "not-a-skill" / "README.md").write_text("Not a skill")
+
+        result = worktree_manager.setup_agent_skills("eng-1", skills_src)
+        assert result == []
+
+    def test_returns_empty_for_missing_dir(self, worktree_manager):
+        """setup_agent_skills returns empty list for nonexistent source dir."""
+        worktree_manager.create("eng-1")
+        nonexistent = worktree_manager.repo_path / "no-such-dir"
+        result = worktree_manager.setup_agent_skills("eng-1", nonexistent)
+        assert result == []
+
+    def test_raises_without_worktree(self, worktree_manager):
+        """setup_agent_skills raises WorktreeError if worktree doesn't exist."""
+        skills_src = worktree_manager.repo_path / "test-skills"
+        skills_src.mkdir()
+        with pytest.raises(WorktreeError):
+            worktree_manager.setup_agent_skills("nonexistent", skills_src)
+
+    def test_multiple_skills(self, worktree_manager):
+        """setup_agent_skills handles multiple skill directories."""
+        worktree_manager.create("eng-1")
+
+        skills_src = worktree_manager.repo_path / "test-skills"
+        for name in ["alpha", "beta", "gamma"]:
+            d = skills_src / name
+            d.mkdir(parents=True)
+            (d / "SKILL.md").write_text(f"---\nname: {name}\n---\n")
+
+        result = worktree_manager.setup_agent_skills("eng-1", skills_src)
+        assert result == ["alpha", "beta", "gamma"]
+
+        target_base = worktree_manager._worktree_path("eng-1") / ".claude" / "skills"
+        for name in ["alpha", "beta", "gamma"]:
+            assert (target_base / name / "SKILL.md").exists()
+
+    def test_overwrites_existing_skills(self, worktree_manager):
+        """setup_agent_skills overwrites previously copied skills."""
+        worktree_manager.create("eng-1")
+
+        skills_src = worktree_manager.repo_path / "test-skills"
+        skill = skills_src / "deploy"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text("version 1")
+
+        worktree_manager.setup_agent_skills("eng-1", skills_src)
+
+        # Update source and re-inject
+        (skill / "SKILL.md").write_text("version 2")
+        worktree_manager.setup_agent_skills("eng-1", skills_src)
+
+        target = worktree_manager._worktree_path("eng-1") / ".claude" / "skills" / "deploy" / "SKILL.md"
+        assert target.read_text() == "version 2"
