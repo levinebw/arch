@@ -546,6 +546,78 @@ def worktree_manager(git_repo):
     return WorktreeManager(git_repo)
 
 
+class TestWorktreeNamespacing:
+    """Tests for multi-instance worktree namespacing."""
+
+    def test_namespaced_worktree_path(self, git_repo):
+        """Instance ID creates namespaced worktree directory."""
+        mgr = WorktreeManager(git_repo, instance_id="abc123")
+        path = mgr.create("frontend-1")
+        assert ".worktrees/abc123/frontend-1" in str(path)
+        assert path.exists()
+
+    def test_namespaced_branch_name(self, git_repo):
+        """Instance ID prefixes branch names."""
+        mgr = WorktreeManager(git_repo, instance_id="abc123")
+        mgr.create("frontend-1")
+        branch = mgr._branch_name("frontend-1")
+        assert branch == "abc123/agent/frontend-1"
+
+    def test_no_instance_id_backward_compatible(self, git_repo):
+        """No instance_id uses old flat paths."""
+        mgr = WorktreeManager(git_repo)
+        path = mgr.create("frontend-1")
+        assert ".worktrees/frontend-1" in str(path)
+        assert ".worktrees/None" not in str(path)
+        assert mgr._branch_name("frontend-1") == "agent/frontend-1"
+
+    def test_two_instances_same_repo(self, git_repo):
+        """Two instances on same repo don't collide."""
+        mgr_a = WorktreeManager(git_repo, instance_id="inst-a")
+        mgr_b = WorktreeManager(git_repo, instance_id="inst-b")
+
+        path_a = mgr_a.create("archie")
+        path_b = mgr_b.create("archie")
+
+        assert path_a != path_b
+        assert path_a.exists()
+        assert path_b.exists()
+        assert "inst-a" in str(path_a)
+        assert "inst-b" in str(path_b)
+
+    def test_cleanup_only_own_instance(self, git_repo):
+        """cleanup_all only removes own instance's worktrees."""
+        mgr_a = WorktreeManager(git_repo, instance_id="inst-a")
+        mgr_b = WorktreeManager(git_repo, instance_id="inst-b")
+
+        mgr_a.create("worker-1")
+        mgr_b.create("worker-1")
+
+        # Clean up instance A
+        removed = mgr_a.cleanup_all()
+        assert removed == 1
+
+        # Instance B's worktree still exists
+        assert mgr_b.exists("worker-1")
+
+    def test_merge_with_namespaced_branch(self, git_repo):
+        """Merge works with namespaced branch names."""
+        mgr = WorktreeManager(git_repo, instance_id="inst-x")
+        path = mgr.create("dev-1")
+
+        # Create a file and commit in the worktree
+        (path / "output.txt").write_text("hello from dev-1")
+        subprocess.run(["git", "add", "."], cwd=path, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-m", "Add output"], cwd=path, check=True, capture_output=True)
+
+        # Merge to main
+        mgr.merge("dev-1", "main")
+
+        # Verify file on main
+        assert (git_repo / "output.txt").exists()
+        assert (git_repo / "output.txt").read_text() == "hello from dev-1"
+
+
 class TestSetupAgentSkills:
     """Tests for skill injection into agent worktrees."""
 

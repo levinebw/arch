@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import atexit
+import json
 import logging
 import os
 import signal
@@ -186,6 +187,7 @@ class ProjectConfig:
     name: str
     description: str = ""
     repo: str = "."
+    brief: str = "BRIEF.md"
 
 
 @dataclass
@@ -250,6 +252,7 @@ class SettingsConfig:
     auto_merge: bool = False
     auto_approve_team: bool = False
     require_user_approval: list[str] = field(default_factory=list)
+    instance_id: Optional[str] = None
 
 
 @dataclass
@@ -292,10 +295,12 @@ def parse_config(config_path: Path) -> ArchConfig:
         raise ValueError("Config project.name is required")
 
     # Parse project
+    project_raw = raw["project"]
     project = ProjectConfig(
-        name=raw["project"]["name"],
-        description=raw["project"].get("description", ""),
-        repo=raw["project"].get("repo", "."),
+        name=project_raw["name"],
+        description=project_raw.get("description", ""),
+        repo=project_raw.get("repo", "."),
+        brief=project_raw.get("brief", "BRIEF.md"),
     )
 
     # Parse archie
@@ -361,6 +366,7 @@ def parse_config(config_path: Path) -> ArchConfig:
 
     # Parse settings
     settings_raw = raw.get("settings", {})
+    instance_id = settings_raw.get("instance_id") or None
     settings = SettingsConfig(
         max_concurrent_agents=settings_raw.get("max_concurrent_agents", DEFAULT_MAX_CONCURRENT_AGENTS),
         state_dir=settings_raw.get("state_dir", DEFAULT_STATE_DIR),
@@ -369,6 +375,7 @@ def parse_config(config_path: Path) -> ArchConfig:
         auto_merge=settings_raw.get("auto_merge", False),
         auto_approve_team=settings_raw.get("auto_approve_team", False),
         require_user_approval=settings_raw.get("require_user_approval", []),
+        instance_id=instance_id,
     )
 
     return ArchConfig(
@@ -559,6 +566,8 @@ class Orchestrator:
             logger.info("Step 1: Parsing arch.yaml...")
             self.config = parse_config(self.config_path)
             logger.info(f"Project: {self.config.project.name}")
+            if self.config.settings.instance_id:
+                logger.info(f"Instance: {self.config.settings.instance_id}")
 
             # Step 2: Initialize state store
             logger.info("Step 2: Initializing state store...")
@@ -580,7 +589,10 @@ class Orchestrator:
                 return False
 
             # Initialize worktree manager
-            self.worktree_manager = WorktreeManager(self.repo_path)
+            self.worktree_manager = WorktreeManager(
+                self.repo_path,
+                instance_id=self.config.settings.instance_id,
+            )
 
             # Ensure .worktrees/ and state/ are gitignored
             self._ensure_gitignore()
@@ -897,6 +909,7 @@ class Orchestrator:
             on_close_project=self._handle_close_project,
             on_plan_team=self._handle_plan_team,
             token_tracker=self.token_tracker,
+            brief_path=self.config.project.brief,
         )
         await self.mcp_server.start()
         logger.info(f"MCP server listening on port {self.config.settings.mcp_port}")
@@ -1434,6 +1447,22 @@ class Orchestrator:
             to_agent="system",
             content=f"Project complete: {summary}",
         )
+
+        # Write completion signal for parent orchestrators (AEOS COO)
+        try:
+            from datetime import datetime, timezone
+            result = {
+                "instance_id": self.config.settings.instance_id,
+                "status": "complete",
+                "brief": self.config.project.brief,
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+                "summary": summary,
+            }
+            result_path = Path(self.config.settings.state_dir) / "result.json"
+            result_path.write_text(json.dumps(result, indent=2))
+            logger.info(f"Completion signal written to {result_path}")
+        except Exception as e:
+            logger.warning(f"Failed to write result.json: {e}")
 
         return True
 

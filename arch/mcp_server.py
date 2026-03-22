@@ -519,6 +519,7 @@ class MCPServer:
         on_close_project: Optional[Callable[[str], Awaitable[bool]]] = None,
         on_plan_team: Optional[Callable[..., Awaitable[dict[str, Any]]]] = None,
         token_tracker=None,
+        brief_path: str = "BRIEF.md",
     ):
         """
         Initialize the MCP server.
@@ -533,10 +534,12 @@ class MCPServer:
             on_request_merge: Callback to handle merge requests.
             on_close_project: Callback to handle project close.
             token_tracker: TokenTracker instance for cost data.
+            brief_path: Path to BRIEF.md relative to repo root.
         """
         self.state = state
         self.port = port
         self.repo_path = Path(repo_path) if repo_path else None
+        self._brief_path = brief_path
         self.github_repo = github_repo
 
         # Callbacks for orchestrator actions
@@ -961,7 +964,7 @@ class MCPServer:
         # Read BRIEF.md if available
         brief_content = ""
         if self.repo_path:
-            brief_path = self.repo_path / "BRIEF.md"
+            brief_path = self.repo_path / self._brief_path
             if brief_path.exists():
                 brief_content = brief_path.read_text()
 
@@ -1049,10 +1052,10 @@ class MCPServer:
         if not self.repo_path:
             return {"ok": False, "error": "repo_path not configured"}
 
-        brief_path = self.repo_path / "BRIEF.md"
+        brief_path = self.repo_path / self._brief_path
 
         if not brief_path.exists():
-            return {"ok": False, "error": "BRIEF.md not found"}
+            return {"ok": False, "error": f"{self._brief_path} not found"}
 
         try:
             brief_content = brief_path.read_text()

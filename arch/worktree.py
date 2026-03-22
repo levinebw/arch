@@ -35,26 +35,33 @@ class WorktreeManager:
     WORKTREE_DIR = ".worktrees"
     BRANCH_PREFIX = "agent"
 
-    def __init__(self, repo_path: str | Path):
+    def __init__(self, repo_path: str | Path, instance_id: Optional[str] = None):
         """
         Initialize the worktree manager.
 
         Args:
             repo_path: Path to the git repository root.
+            instance_id: Optional instance ID for multi-instance namespacing.
+                         When set, worktrees are created under .worktrees/{instance_id}/
+                         and branches are prefixed with {instance_id}/.
 
         Raises:
             WorktreeError: If the path is not a valid git repository.
         """
         self.repo_path = Path(repo_path).resolve()
+        self.instance_id = instance_id
 
         try:
             self.repo = Repo(self.repo_path)
         except git.InvalidGitRepositoryError:
             raise WorktreeError(f"Not a git repository: {self.repo_path}")
 
-        # Ensure worktree directory exists
-        self.worktree_base = self.repo_path / self.WORKTREE_DIR
-        self.worktree_base.mkdir(exist_ok=True)
+        # Ensure worktree directory exists (namespaced if instance_id set)
+        if instance_id:
+            self.worktree_base = self.repo_path / self.WORKTREE_DIR / instance_id
+        else:
+            self.worktree_base = self.repo_path / self.WORKTREE_DIR
+        self.worktree_base.mkdir(parents=True, exist_ok=True)
 
     def _worktree_path(self, agent_id: str) -> Path:
         """Get the worktree path for an agent."""
@@ -62,6 +69,8 @@ class WorktreeManager:
 
     def _branch_name(self, agent_id: str) -> str:
         """Get the branch name for an agent."""
+        if self.instance_id:
+            return f"{self.instance_id}/{self.BRANCH_PREFIX}/{agent_id}"
         return f"{self.BRANCH_PREFIX}/{agent_id}"
 
     def create(

@@ -130,7 +130,8 @@ def get_dashboard_routes(
         content = body.get("content", "").strip()
         if not content:
             return JSONResponse({"ok": False, "error": "Empty message"}, status_code=400)
-        state.add_message("user", "archie", content)
+        message = state.add_message("user", "archie", content)
+        broadcaster.broadcast("message", message)
         return JSONResponse({"ok": True})
 
     return [
@@ -1074,13 +1075,6 @@ async function sendMessage() {
       body: JSON.stringify({ content: val })
     });
     if (resp.ok) {
-      // Show sent message in activity log immediately
-      addActivityEntry({
-        from: "you",
-        content: val,
-        timestamp: new Date().toISOString(),
-        id: "user-" + Date.now()
-      });
       input.value = "";
       showToast("Message sent", "success");
     }
