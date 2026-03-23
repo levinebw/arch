@@ -648,11 +648,16 @@ class TestDefaultTemplates:
         """DEFAULT_BRIEF_MD has required sections."""
         content = DEFAULT_BRIEF_MD.format(project_name="Test")
 
-        assert "## Goals" in content
-        assert "## Done When" in content
+        assert "## Goal" in content
+        assert "## This Session" in content
+        assert "## Done When (this session)" in content
+        assert "## Done When (project)" in content
+        assert "## Completed" in content
+        assert "## Backlog" in content
         assert "## Constraints" in content
         assert "## Current Status" in content
         assert "## Decisions Log" in content
+        assert "Rationale" in content
 
 
 class TestCmdDashboard:

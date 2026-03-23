@@ -398,28 +398,50 @@ settings:
 
 DEFAULT_BRIEF_MD = '''# {project_name}
 
-## Goals
+## Goal
 
-<!-- What does success look like? Be specific. -->
+<!-- What does this project achieve? One or two sentences. -->
 
-## Done When
+## This Session
 
-<!-- Concrete, testable criteria for completion -->
+<!-- What should Archie focus on RIGHT NOW? Be specific about tasks, agent roles, and scope.
+     Example: "Focus on TASK-003 only. Spawn one backend-dev agent." -->
+
+## Done When (this session)
+
+<!-- Concrete, testable criteria scoped to THIS session's work.
+     Archie checks these off as work completes. -->
 - [ ]
+
+## Done When (project)
+
+<!-- Overall project completion criteria. Archie uses these for context
+     but focuses on the session criteria above. -->
+- [ ]
+
+## Completed
+
+<!-- Checked-off items from previous sessions. Helps Archie understand
+     what's already done and avoid re-doing work. -->
+
+## Backlog
+
+<!-- Tasks not in scope for this session. Listed for context only.
+     Archie should NOT start these unless explicitly told to. -->
 
 ## Constraints
 
-<!-- Technical requirements, time limits, scope boundaries -->
+<!-- Technical requirements, security rules, scope boundaries. -->
 
 ## Current Status
 
-<!-- Updated by Archie throughout the session -->
+<!-- Updated by Archie throughout the session. -->
 Not started.
 
 ## Decisions Log
 
-| Date | Decision |
-|------|----------|
+| Date | Decision | Rationale |
+|------|----------|-----------|
 '''
 
 DEFAULT_GITIGNORE_ADDITIONS = '''
