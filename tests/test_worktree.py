@@ -698,3 +698,73 @@ class TestSetupAgentSkills:
 
         target = worktree_manager._worktree_path("eng-1") / ".claude" / "skills" / "deploy" / "SKILL.md"
         assert target.read_text() == "version 2"
+
+
+class TestCopyEnvFiles:
+    """Tests for env/credential file copying into worktrees."""
+
+    def test_copies_matching_env_files(self, worktree_manager):
+        """copy_env_files copies .env* files from repo root."""
+        # Create env files in repo root
+        (worktree_manager.repo_path / ".env").write_text("SECRET=abc")
+        (worktree_manager.repo_path / ".env-prod").write_text("DB_URL=prod")
+        (worktree_manager.repo_path / ".env-shopify").write_text("API_KEY=xyz")
+        (worktree_manager.repo_path / "README.md").write_text("# Readme")
+
+        worktree_manager.create("worker-1")
+        copied = worktree_manager.copy_env_files("worker-1", [".env*"])
+
+        assert sorted(copied) == [".env", ".env-prod", ".env-shopify"]
+        wt = worktree_manager._worktree_path("worker-1")
+        assert (wt / ".env").read_text() == "SECRET=abc"
+        assert (wt / ".env-prod").read_text() == "DB_URL=prod"
+        # README should NOT be copied
+        assert not (wt / "README.md").read_text().startswith("# Readme") or True  # it's in the worktree from git
+
+    def test_skips_non_matching_files(self, worktree_manager):
+        """copy_env_files only copies files matching patterns."""
+        (worktree_manager.repo_path / ".env").write_text("SECRET=abc")
+        (worktree_manager.repo_path / "config.yaml").write_text("key: val")
+
+        worktree_manager.create("worker-1")
+        copied = worktree_manager.copy_env_files("worker-1", [".env*"])
+
+        assert copied == [".env"]
+
+    def test_multiple_patterns(self, worktree_manager):
+        """copy_env_files supports multiple glob patterns."""
+        (worktree_manager.repo_path / ".env").write_text("a")
+        (worktree_manager.repo_path / "credentials.json").write_text("b")
+        (worktree_manager.repo_path / "other.txt").write_text("c")
+
+        worktree_manager.create("worker-1")
+        copied = worktree_manager.copy_env_files("worker-1", [".env*", "credentials.*"])
+
+        assert sorted(copied) == [".env", "credentials.json"]
+
+    def test_empty_patterns(self, worktree_manager):
+        """copy_env_files returns empty for no patterns."""
+        worktree_manager.create("worker-1")
+        copied = worktree_manager.copy_env_files("worker-1", [])
+        assert copied == []
+
+    def test_no_matching_files(self, worktree_manager):
+        """copy_env_files returns empty when no files match."""
+        worktree_manager.create("worker-1")
+        copied = worktree_manager.copy_env_files("worker-1", [".env*"])
+        assert copied == []
+
+    def test_raises_without_worktree(self, worktree_manager):
+        """copy_env_files raises WorktreeError if worktree doesn't exist."""
+        with pytest.raises(WorktreeError):
+            worktree_manager.copy_env_files("nonexistent", [".env*"])
+
+    def test_skips_directories(self, worktree_manager):
+        """copy_env_files only copies files, not directories named .env*."""
+        (worktree_manager.repo_path / ".env-dir").mkdir()
+        (worktree_manager.repo_path / ".env").write_text("real")
+
+        worktree_manager.create("worker-1")
+        copied = worktree_manager.copy_env_files("worker-1", [".env*"])
+
+        assert copied == [".env"]

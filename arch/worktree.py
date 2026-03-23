@@ -8,6 +8,7 @@ conflicts.
 
 from __future__ import annotations
 
+import fnmatch
 import shutil
 import subprocess
 from pathlib import Path
@@ -256,6 +257,45 @@ class WorktreeManager:
             copied_skills.append(skill_dir.name)
 
         return copied_skills
+
+    def copy_env_files(
+        self,
+        agent_id: str,
+        patterns: list[str],
+    ) -> list[str]:
+        """
+        Copy gitignored env/credential files from the repo root into an agent's worktree.
+
+        Git worktrees don't include gitignored files, so agents can't access
+        .env, .env-prod, etc. This copies matching files from the main repo.
+
+        Args:
+            agent_id: Agent identifier.
+            patterns: List of glob patterns to match (e.g., [".env*", "credentials.*"]).
+
+        Returns:
+            List of filenames that were copied.
+
+        Raises:
+            WorktreeError: If worktree doesn't exist.
+        """
+        worktree_path = self._worktree_path(agent_id)
+        if not worktree_path.exists():
+            raise WorktreeError(f"Worktree does not exist: {worktree_path}")
+
+        if not patterns:
+            return []
+
+        copied = []
+        for item in sorted(self.repo_path.iterdir()):
+            if not item.is_file():
+                continue
+            if any(fnmatch.fnmatch(item.name, pat) for pat in patterns):
+                dest = worktree_path / item.name
+                shutil.copy2(item, dest)
+                copied.append(item.name)
+
+        return copied
 
     def remove(self, agent_id: str, force: bool = True) -> bool:
         """

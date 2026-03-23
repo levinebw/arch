@@ -54,64 +54,8 @@ DEFAULT_ALLOWED_TOOLS_ALL = [
     "Write",
     "Glob",
     "Grep",
-    # Git operations
-    "Bash(git status)",
-    "Bash(git diff *)",
-    "Bash(git add *)",
-    "Bash(git commit *)",
-    "Bash(git log *)",
-    "Bash(git branch *)",
-    "Bash(git checkout *)",
-    # Dev tools — agents need to run tests, builds, servers, and scripts
-    "Bash(python *)",
-    "Bash(python3 *)",
-    "Bash(node *)",
-    "Bash(npm *)",
-    "Bash(npx *)",
-    "Bash(pip *)",
-    "Bash(pip3 *)",
-    "Bash(yarn *)",
-    "Bash(pnpm *)",
-    "Bash(bun *)",
-    "Bash(deno *)",
-    "Bash(cargo *)",
-    "Bash(go *)",
-    "Bash(make *)",
-    "Bash(cmake *)",
-    "Bash(mvn *)",
-    "Bash(gradle *)",
-    "Bash(ruby *)",
-    "Bash(bundle *)",
-    "Bash(rails *)",
-    "Bash(docker *)",
-    "Bash(docker-compose *)",
-    "Bash(curl *)",
-    "Bash(wget *)",
-    "Bash(cat *)",
-    "Bash(ls *)",
-    "Bash(mkdir *)",
-    "Bash(cp *)",
-    "Bash(mv *)",
-    "Bash(head *)",
-    "Bash(tail *)",
-    "Bash(wc *)",
-    "Bash(find *)",
-    "Bash(grep *)",
-    "Bash(sort *)",
-    "Bash(cd *)",
-    "Bash(touch *)",
-    "Bash(chmod *)",
-    "Bash(echo *)",
-    "Bash(afplay *)",
-    "Bash(sed *)",
-    "Bash(awk *)",
-    "Bash(env *)",
-    "Bash(export *)",
-    "Bash(source *)",
-    "Bash(sh *)",
-    "Bash(bash *)",
-    "Bash(kill *)",
-    "Bash(lsof *)",
+    # All Bash commands — agents operate in isolated worktrees
+    "Bash(*)",
     # MCP tools available to all agents
     "mcp__arch__send_message",
     "mcp__arch__get_messages",
@@ -251,6 +195,8 @@ class SettingsConfig:
     token_budget_usd: Optional[float] = None
     auto_merge: bool = False
     auto_approve_team: bool = False
+    auto_resume_archie: bool = True
+    env_files: list[str] = field(default_factory=lambda: [".env*"])
     require_user_approval: list[str] = field(default_factory=list)
     instance_id: Optional[str] = None
 
@@ -374,6 +320,8 @@ def parse_config(config_path: Path) -> ArchConfig:
         token_budget_usd=settings_raw.get("token_budget_usd"),
         auto_merge=settings_raw.get("auto_merge", False),
         auto_approve_team=settings_raw.get("auto_approve_team", False),
+        auto_resume_archie=settings_raw.get("auto_resume_archie", True),
+        env_files=settings_raw.get("env_files", [".env*"]),
         require_user_approval=settings_raw.get("require_user_approval", []),
         instance_id=instance_id,
     )
@@ -965,6 +913,12 @@ class Orchestrator:
             if copied:
                 logger.info(f"Installed {len(copied)} skills for archie: {copied}")
 
+        # Copy env/credential files into worktree
+        if self.config.settings.env_files:
+            copied = self.worktree_manager.copy_env_files("archie", self.config.settings.env_files)
+            if copied:
+                logger.info(f"Copied env files for archie: {copied}")
+
         logger.info(f"Archie worktree created at {worktree_path}")
 
     async def _spawn_archie(self) -> bool:
@@ -1213,6 +1167,12 @@ class Orchestrator:
                 copied = self.worktree_manager.setup_agent_skills(agent_id, skills_dir)
                 if copied:
                     logger.info(f"Installed {len(copied)} skills for {agent_id}: {copied}")
+
+            # Copy env/credential files into worktree
+            if self.config.settings.env_files:
+                copied = self.worktree_manager.copy_env_files(agent_id, self.config.settings.env_files)
+                if copied:
+                    logger.info(f"Copied env files for {agent_id}: {copied}")
 
             # Register agent in state
             self.state.register_agent(
@@ -1558,7 +1518,27 @@ class Orchestrator:
                 logger.info("Archie exited after project completion")
                 return
 
-            # Archie exited without calling close_project — ask the user
+            # Archie exited without calling close_project
+            session_id = self._archie_session.session_id if self._archie_session else None
+
+            if self.config.settings.auto_resume_archie:
+                # Auto-resume: restart immediately without asking the user
+                logger.info("Archie exited without closing project — auto-resuming")
+                config = self._build_archie_config()
+                self._archie_session = await self.session_manager.spawn(
+                    config,
+                    "You exited without calling close_project. Resume your work — call get_project_context, check agent status, and continue.",
+                    resume_session_id=session_id,
+                )
+                if self._archie_session:
+                    self._archie_exit_handled = False
+                    logger.info("Archie auto-resumed")
+                else:
+                    logger.error("Failed to auto-resume Archie")
+                    self._shutdown_requested = True
+                return
+
+            # Auto-resume disabled — ask the user
             logger.info("Archie exited without closing project — escalating to user")
             if self.mcp_server:
                 try:
@@ -1571,7 +1551,6 @@ class Orchestrator:
                     )
                     if answer and "resume" in answer.lower():
                         logger.info("User requested Archie resume")
-                        session_id = self._archie_session.session_id if self._archie_session else None
                         config = self._build_archie_config()
                         prompt = answer if answer.lower() != "resume archie" else "User asked you to continue. Check project status and proceed."
                         self._archie_session = await self.session_manager.spawn(

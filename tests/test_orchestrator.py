@@ -488,15 +488,36 @@ class TestOrchestratorArchieRestart:
         assert config.permission_prompt_tool == "mcp__arch__handle_permission_request"
 
     @pytest.mark.asyncio
-    async def test_archie_normal_exit_no_restart(self, orchestrator, mock_all_gates):
-        """Normal Archie exit (code 0) escalates to user."""
+    async def test_archie_normal_exit_auto_resumes(self, orchestrator, mock_all_gates):
+        """Normal Archie exit (code 0) auto-resumes without asking user."""
         await orchestrator.startup()
 
         # Simulate normal exit
         orchestrator._archie_session._running = False
         orchestrator._archie_session._exit_code = 0
 
-        # Mock spawn and escalation (user chooses "Shut down")
+        mock_session = MagicMock()
+        mock_session.is_running = True
+        orchestrator.session_manager.spawn = AsyncMock(return_value=mock_session)
+        orchestrator.mcp_server._escalate_and_wait = AsyncMock()
+
+        await orchestrator._handle_archie_exit()
+
+        # Should auto-resume without escalating
+        orchestrator.session_manager.spawn.assert_called_once()
+        orchestrator.mcp_server._escalate_and_wait.assert_not_called()
+        assert orchestrator._shutdown_requested is False
+        assert orchestrator._crash_restart_count == 0
+
+    @pytest.mark.asyncio
+    async def test_archie_normal_exit_no_restart_when_disabled(self, orchestrator, mock_all_gates):
+        """Normal Archie exit escalates to user when auto_resume_archie=False."""
+        await orchestrator.startup()
+        orchestrator.config.settings.auto_resume_archie = False
+
+        orchestrator._archie_session._running = False
+        orchestrator._archie_session._exit_code = 0
+
         orchestrator.session_manager.spawn = AsyncMock()
         orchestrator.mcp_server._escalate_and_wait = AsyncMock(return_value="Shut down")
 
@@ -504,15 +525,13 @@ class TestOrchestratorArchieRestart:
 
         # Should NOT attempt restart (user chose shutdown)
         orchestrator.session_manager.spawn.assert_not_called()
-        # Should request shutdown
         assert orchestrator._shutdown_requested is True
-        # Crash counter should be reset
-        assert orchestrator._crash_restart_count == 0
 
     @pytest.mark.asyncio
-    async def test_archie_normal_exit_resume(self, orchestrator, mock_all_gates):
-        """Normal Archie exit with user choosing Resume resumes Archie."""
+    async def test_archie_normal_exit_resume_when_disabled(self, orchestrator, mock_all_gates):
+        """Normal Archie exit with user choosing Resume when auto_resume disabled."""
         await orchestrator.startup()
+        orchestrator.config.settings.auto_resume_archie = False
 
         orchestrator._archie_session._running = False
         orchestrator._archie_session._exit_code = 0
