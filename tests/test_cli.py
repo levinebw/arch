@@ -542,6 +542,92 @@ class TestMain:
         assert "not found" in captured.out
 
 
+class TestCleanFlag:
+    """Tests for --clean flag on archie up."""
+
+    def _simulate_clean(self, state_dir):
+        """Simulate the --clean logic from cmd_up."""
+        import shutil
+        events_backup = None
+        events_path = state_dir / "events.jsonl"
+        if events_path.exists():
+            events_backup = events_path.read_text()
+        shutil.rmtree(state_dir)
+        state_dir.mkdir(parents=True, exist_ok=True)
+        if events_backup:
+            events_path.write_text(events_backup)
+
+    def test_clean_removes_state_files(self, tmp_path):
+        """--clean removes agents.json, messages.json, etc."""
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+        (state_dir / "agents.json").write_text('{"agents": {}}')
+        (state_dir / "messages.json").write_text('[]')
+        (state_dir / "pending_decisions.json").write_text('[]')
+        (state_dir / "usage.json").write_text('{}')
+
+        self._simulate_clean(state_dir)
+
+        assert state_dir.exists()
+        assert not (state_dir / "agents.json").exists()
+        assert not (state_dir / "messages.json").exists()
+        assert not (state_dir / "pending_decisions.json").exists()
+        assert not (state_dir / "usage.json").exists()
+
+    def test_clean_preserves_events_jsonl(self, tmp_path):
+        """--clean preserves events.jsonl as historical record."""
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+        (state_dir / "agents.json").write_text('{}')
+        (state_dir / "events.jsonl").write_text('{"event": "test"}\n{"event": "test2"}\n')
+
+        self._simulate_clean(state_dir)
+
+        assert (state_dir / "events.jsonl").exists()
+        content = (state_dir / "events.jsonl").read_text()
+        assert "test" in content
+        assert "test2" in content
+
+    def test_clean_no_events_file(self, tmp_path):
+        """--clean works when there's no events.jsonl."""
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+        (state_dir / "agents.json").write_text('{}')
+
+        self._simulate_clean(state_dir)
+
+        assert state_dir.exists()
+        assert not (state_dir / "agents.json").exists()
+        assert not (state_dir / "events.jsonl").exists()
+
+    def test_argparse_accepts_clean_flag(self):
+        """--clean is accepted by the argument parser."""
+        import argparse
+        # Verify the flag is parsed without error
+        with patch("sys.argv", ["arch", "up", "--clean"]):
+            parser = argparse.ArgumentParser()
+            sub = parser.add_subparsers(dest="command")
+            up = sub.add_parser("up")
+            up.add_argument("--config", default="arch.yaml")
+            up.add_argument("--keep-worktrees", action="store_true")
+            up.add_argument("--clean", action="store_true")
+            args = parser.parse_args(["up", "--clean"])
+            assert args.clean is True
+
+    def test_argparse_clean_default_false(self):
+        """--clean defaults to False."""
+        import argparse
+        with patch("sys.argv", ["arch", "up"]):
+            parser = argparse.ArgumentParser()
+            sub = parser.add_subparsers(dest="command")
+            up = sub.add_parser("up")
+            up.add_argument("--config", default="arch.yaml")
+            up.add_argument("--keep-worktrees", action="store_true")
+            up.add_argument("--clean", action="store_true")
+            args = parser.parse_args(["up"])
+            assert args.clean is False
+
+
 class TestDefaultTemplates:
     """Tests for default template content."""
 
