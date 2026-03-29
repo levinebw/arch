@@ -195,7 +195,11 @@ class WorktreeManager:
 
 {persona_content}"""
 
-        claude_md_path = worktree_path / "CLAUDE.md"
+        # Write to .claude/CLAUDE.md (not root CLAUDE.md) to avoid
+        # overwriting the project's own CLAUDE.md on merge
+        claude_dir = worktree_path / ".claude"
+        claude_dir.mkdir(parents=True, exist_ok=True)
+        claude_md_path = claude_dir / "CLAUDE.md"
         claude_md_path.write_text(header)
 
         return claude_md_path

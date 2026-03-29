@@ -769,7 +769,7 @@ class Orchestrator:
     def _ensure_gitignore(self) -> None:
         """Ensure .worktrees/ and state/ are in .gitignore."""
         gitignore_path = self.repo_path / ".gitignore"
-        required = [".worktrees/", "state/"]
+        required = [".worktrees/", "state/", ".claude/"]
 
         existing = set()
         if gitignore_path.exists():
