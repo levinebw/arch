@@ -1350,6 +1350,14 @@ class Orchestrator:
                 except Exception as e:
                     logger.warning(f"Failed to remove worktree for {agent_id}: {e}")
 
+            # Decrement instance counter
+            agent = self.state.get_agent(agent_id) if self.state else None
+            if agent and agent.get("role"):
+                role = agent["role"]
+                if role in self._agent_instance_counts:
+                    self._agent_instance_counts[role] = max(0, self._agent_instance_counts[role] - 1)
+                    logger.info(f"Instance count for {role}: {self._agent_instance_counts[role]}")
+
             # Update state
             if self.state:
                 self.state.remove_agent(agent_id)

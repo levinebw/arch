@@ -134,19 +134,51 @@ async def cmd_up(args: argparse.Namespace) -> int:
         raw_config = yaml.safe_load(f)
     mcp_port = raw_config.get("settings", {}).get("mcp_port", 3999)
 
-    # Clear state directory if --clean flag
-    if args.clean and state_dir.exists():
+    # Clear state directory, worktrees, and agent branches if --clean flag
+    if args.clean:
         import shutil
-        # Preserve events.jsonl as historical record
-        events_backup = None
-        events_path = state_dir / "events.jsonl"
-        if events_path.exists():
-            events_backup = events_path.read_text()
-        shutil.rmtree(state_dir)
-        state_dir.mkdir(parents=True, exist_ok=True)
-        if events_backup:
-            events_path.write_text(events_backup)
-        print("State directory cleared (--clean)")
+        import subprocess as sp
+
+        # Clear state files (preserve events.jsonl)
+        if state_dir.exists():
+            events_backup = None
+            events_path = state_dir / "events.jsonl"
+            if events_path.exists():
+                events_backup = events_path.read_text()
+            shutil.rmtree(state_dir)
+            state_dir.mkdir(parents=True, exist_ok=True)
+            if events_backup:
+                events_path.write_text(events_backup)
+
+        # Remove worktrees
+        worktrees_dir = config_path.parent / ".worktrees"
+        if worktrees_dir.exists():
+            # Use git worktree remove for proper cleanup
+            result = sp.run(
+                ["git", "worktree", "list", "--porcelain"],
+                cwd=config_path.parent, capture_output=True, text=True
+            )
+            for line in result.stdout.splitlines():
+                if line.startswith("worktree ") and ".worktrees" in line:
+                    wt_path = line.split("worktree ", 1)[1]
+                    sp.run(["git", "worktree", "remove", "--force", wt_path],
+                           cwd=config_path.parent, capture_output=True)
+            # Clean up any remaining dirs
+            if worktrees_dir.exists():
+                shutil.rmtree(worktrees_dir, ignore_errors=True)
+
+        # Remove stale agent/* branches
+        result = sp.run(
+            ["git", "branch", "--list", "agent/*"],
+            cwd=config_path.parent, capture_output=True, text=True
+        )
+        for line in result.stdout.splitlines():
+            branch = line.strip().lstrip("* ")
+            if branch:
+                sp.run(["git", "branch", "-D", branch],
+                       cwd=config_path.parent, capture_output=True)
+
+        print("State, worktrees, and agent branches cleared (--clean)")
 
     print_banner()
     print(f"Starting ARCH with config: {config_path}")
